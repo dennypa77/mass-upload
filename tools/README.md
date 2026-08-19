@@ -105,17 +105,31 @@ G:\My Drive\ (foto lokal) ──► foto ──► foto-upload/ ──► push k
 
 ## Alur utama: proses satu folder foto
 
-Ini cara yang dipakai sehari-hari. Satu folder produk diproses dari awal sampai URL-nya
-tersimpan, sekali jalan:
+Di UI, bagian **Folder foto produk** dikerjakan dua tahap supaya bisa dilihat dulu sebelum
+diproses:
+
+1. **Pilih Folder…** → dialog terbuka di lokasi Drive (`config.json` → `foto.root`).
+   Setelah dipilih, **path-nya tampil di kotak** dan isinya langsung dideteksi.
+   Path juga boleh ditempel langsung ke kotak lalu tekan Enter — tidak harus lewat dialog.
+2. Hasil deteksi muncul di bawahnya, misalnya:
+   ```
+   159 foto terdeteksi:
+        Graphica Key    JIBBITZ      CORTIS      53 foto
+        Hangs on You    JIBBITZ      CORTIS      53 foto
+        Kaitin.aja      JIBBITZ      CORTIS      53 foto
+   ```
+   Deteksi **tidak mengubah apa pun** — hanya membaca. Tombol **Proses Folder Ini** baru
+   aktif setelah ada foto yang dikenali.
+3. **Proses Folder Ini** → konfirmasi dulu, baru dikerjakan.
+
+Lewat baris perintah:
 
 ```
-python tools/shopee_mass_upload.py unggah "G:/My Drive/JIBBITZ/PRODUK 00001 - 00050"
+python tools/shopee_mass_upload.py deteksi "G:/My Drive/JIBBITZ/PRODUK 00001 - 00050"
+python tools/shopee_mass_upload.py unggah  "G:/My Drive/JIBBITZ/PRODUK 00001 - 00050"
 ```
 
-Di UI: tombol **2. Proses Folder Foto** → muncul pemilih folder (langsung terbuka di lokasi
-Drive sesuai `config.json` → `foto.root`).
-
-Yang dikerjakan berurutan:
+Yang dikerjakan `unggah` berurutan:
 
 1. **Deteksi** — folder ditelusuri sampai sub-folder terdalam, semua PNG/JPG dikumpulkan
 2. **Kenali** — tiap foto ditentukan toko, jenis produk, seri, dan tipenya (varian / utama)

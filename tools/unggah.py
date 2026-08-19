@@ -175,3 +175,23 @@ def proses(inti, cfg, folder, push=True):
         print('   ! SKU belum ada di sku.csv: {}'.format(k))
     for t in tak_dikenal[:5]:
         print('   ! dilewati: {}'.format(t))
+
+
+def lapor_deteksi(inti, cfg, folder):
+    """Tampilkan hasil deteksi saja, tanpa menyalin/mengunggah apa pun."""
+    temuan, tanpa_seri, tak_dikenal = deteksi(inti, cfg, folder)
+    print('[deteksi] folder : {}'.format(os.path.abspath(folder)))
+    print('[deteksi] {} foto dikenali, {} berkas dilewati'.format(len(temuan), len(tak_dikenal)))
+    rekap = {}
+    for t in temuan:
+        k = (t['nama_toko'], t['jenis'], t['seri'] or '(seri belum diketahui)')
+        rekap[k] = rekap.get(k, 0) + 1
+    for (tk, jn, sr), n in sorted(rekap.items()):
+        print('   {:<15} {:<12} {:<22} {} foto'.format(tk, jn, sr, n))
+    if temuan:
+        print('[deteksi] contoh tujuan: {} -> {}'.format(
+            os.path.basename(temuan[0]['sumber']), temuan[0]['path_repo']))
+    for k in tanpa_seri[:5]:
+        print('   ! SKU belum ada di sku.csv: {}'.format(k))
+    for t in tak_dikenal[:5]:
+        print('   ! dilewati: {}'.format(t))
