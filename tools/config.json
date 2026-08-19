@@ -1,0 +1,247 @@
+{
+  "_catatan": "Semua pengaturan ada di file ini. Ubah di sini, jangan ubah kode Python-nya.",
+  "template": {
+    "AKSESORIS FASHION": "Shopee_mass_upload_2026-08-12_100009.xlsx",
+    "SEPATU WANITA": "Shopee_mass_upload_2026-08-12_100532.xlsx"
+  },
+  "foto": {
+    "root": "G:\\My Drive",
+    "subfolder": "FOTO PRODUK",
+    "nama_foto_utama": [
+      "foto1.png",
+      "foto2.png",
+      "foto3.png"
+    ],
+    "base_url": null,
+    "_base_url": "Isi setelah repo GitHub dibuat, contoh: https://cdn.jsdelivr.net/gh/username/repo@main"
+  },
+  "jenis": {
+    "JIBBITZ": {
+      "prefix_sku": "JB",
+      "slug": "jibbitz",
+      "folder_drive": "JIBBITZ",
+      "template": "SEPATU WANITA",
+      "kategori": "100603-Sepatu Wanita/Aksesoris & Perawatan Sepatu/Aksesoris & Perawatan Sepatu Lainnya",
+      "harga_paket": 23400,
+      "min_order": 3,
+      "berat_gram": 5,
+      "stok": 999999,
+      "atribut": {
+        "100037": "Indonesia",
+        "101219": "Ya"
+      },
+      "spec": "Bahan: Akrilik\nKetebalan: 2 mm\nFinishing: Cetak UV, permukaan glossy\nPemasangan: Karet kancing jibbitz, pasang di lubang sandal/clog\nMin. order: 3 pcs (boleh beda desain)"
+    },
+    "PIN AKRILIK": {
+      "prefix_sku": "PA",
+      "slug": "pin-akrilik",
+      "folder_drive": "PIN AKRILIK",
+      "template": "AKSESORIS FASHION",
+      "kategori": "100160-Aksesoris Fashion/Aksesoris Tambahan/Bros & Pin",
+      "harga_paket": 23200,
+      "min_order": 4,
+      "berat_gram": 10,
+      "stok": 999999,
+      "atribut": {
+        "100022": "Unisex",
+        "100037": "Indonesia",
+        "100134": "Akrilik",
+        "101219": "Ya"
+      },
+      "spec": "Bahan: Akrilik\nUkuran: +/- 2 x 2,5 cm\nKetebalan: 2 mm\nFinishing: Cetak UV, permukaan glossy\nPemasangan: Jarum peniti (bros)\nMin. order: 4 pcs (boleh beda desain)"
+    },
+    "PIN BUTTON": {
+      "prefix_sku": "PB",
+      "slug": "pin-button",
+      "folder_drive": "PIN BUTTON",
+      "template": "AKSESORIS FASHION",
+      "kategori": "100160-Aksesoris Fashion/Aksesoris Tambahan/Bros & Pin",
+      "harga_paket": 23200,
+      "min_order": 4,
+      "berat_gram": 10,
+      "stok": 999999,
+      "atribut": {
+        "100022": "Unisex",
+        "100037": "Indonesia",
+        "100134": "Logam",
+        "101219": "Ya"
+      },
+      "spec": "Bahan: Aluminium (kaleng) + lapis mika\nUkuran: 44 mm (4,4 cm)\nKetebalan: 4 mm\nFinishing: Print + lapisan mika\nPemasangan: Jarum peniti (bros)\nMin. order: 4 pcs (boleh beda desain)"
+    }
+  },
+  "toko": [
+    {
+      "nama": "Graphica Key",
+      "kode": "GK",
+      "folder_foto": "toko1",
+      "profil": "eksklusif"
+    },
+    {
+      "nama": "Kaitin.aja",
+      "kode": "KTA",
+      "folder_foto": "toko2",
+      "profil": "lucu"
+    },
+    {
+      "nama": "Hangs on You",
+      "kode": "HOY",
+      "folder_foto": "toko3",
+      "profil": "fandom"
+    }
+  ],
+  "profil": {
+    "eksklusif": {
+      "judul": {
+        "PIN AKRILIK": [
+          [
+            "Exclusive Acrylic",
+            "Limited Edition"
+          ],
+          [
+            "Signature Pin",
+            "For Bags & Jackets"
+          ],
+          [
+            "Artisan Crafted",
+            "Collectible Series"
+          ]
+        ],
+        "PIN BUTTON": [
+          [
+            "Iconic Button",
+            "Collector's Pick"
+          ],
+          [
+            "Retro Badge",
+            "Limited Drop"
+          ],
+          [
+            "Pop Icon Button",
+            "Show Your Style"
+          ]
+        ],
+        "JIBBITZ": [
+          [
+            "StylePop Shoe Charm",
+            "Pin Sandal & Clog Accessory"
+          ],
+          [
+            "Icon Drop Shoe Charm",
+            "DIY Shoe Decoration"
+          ],
+          [
+            "Charm Your Vibe",
+            "Hiasan Sandal Kekinian"
+          ]
+        ]
+      },
+      "deskripsi": {
+        "PIN AKRILIK": "Biar outfit kamu nggak cuma biasa, tapi langsung level up, cobain Pin Akrilik dari {TOKO}! Pin ini bukan cuma aksesoris, tapi statement style kamu sehari-hari. Bisa dipasang di jaket, tas, topi, atau papan koleksi - bikin tampilan kamu standout & classy tapi tetep playful. Mau karakter favorit, logo fandom, atau custom design? Bisa banget! Ringan, gampang dipasang, detailnya unik, dan tahan lama.\n\n{SPEC}\n\nLangsung checkout biar nggak kehabisan! Barang dikemas rapi, pengiriman cepat, aman, dan siap bikin outfit kamu auto pop. Jangan lupa kasih bintang lima kalau puas, biar kita terus hadirkan pin eksklusif yang hype abis. Selamat berbelanja dan happy collecting, squad!",
+        "PIN BUTTON": "Pin Button dari {TOKO} bikin outfit kamu auto standout! Cocok buat jaket, tas, topi, atau papan koleksi. Desain eksklusif, colorful, vibe retro/pop icon, dan collectible. Bisa custom sesuai karakter favorit, fandom, atau design sendiri - bikin outfit kamu makin nge-hype. Ringan, gampang dipasang, dan perfect buat daily vibes kamu.\n\n{SPEC}\n\nMasukin ke keranjang sekarang biar nggak kehabisan varian favoritmu! Pengiriman aman, rapi, cepat. Jangan lupa kasih bintang lima kalau puas, biar kita terus hadirkan pin eksklusif yang hype abis. Selamat berbelanja dan keep it cool!",
+        "JIBBITZ": "Sandal kamu jangan cuma polos - upgrade pakai Jibbitz Akrilik dari {TOKO}! Charm ini bikin sandal, crocs, atau clog kamu langsung punya karakter. Desain eksklusif, detail tajam, dan collectible banget. Tinggal tekan ke lubang sandal, langsung nempel kuat dan nggak gampang lepas. Mix & match sesuka kamu, ganti kapan aja sesuai mood.\n\n{SPEC}\n\nLangsung checkout biar nggak kehabisan! Dikemas rapi, aman, pengiriman cepat. Jangan lupa kasih bintang lima kalau puas, biar kita terus hadirkan charm eksklusif yang hype abis. Selamat berbelanja dan happy collecting, squad!"
+      }
+    },
+    "lucu": {
+      "judul": {
+        "PIN AKRILIK": [
+          [
+            "Fun Acrylic",
+            "Kids & Teens"
+          ],
+          [
+            "Cute Character",
+            "Decor & Gifts"
+          ],
+          [
+            "DIY Pin",
+            "Cartoon Style"
+          ]
+        ],
+        "PIN BUTTON": [
+          [
+            "Mood Button",
+            "Mix & Match"
+          ],
+          [
+            "Kawaii Badge",
+            "Giftable Style"
+          ],
+          [
+            "Fun Pop Button",
+            "Daily Pop"
+          ]
+        ],
+        "JIBBITZ": [
+          [
+            "Kawaii Pop Charm",
+            "Aksesoris Sandal Lucu"
+          ],
+          [
+            "CuteCore Shoe Charm",
+            "Karakter Lucu Pin Sandal"
+          ],
+          [
+            "Mini Mood Charm",
+            "Mix & Match Pin Sandal"
+          ]
+        ]
+      },
+      "deskripsi": {
+        "PIN AKRILIK": "Pin Akrilik {TOKO} siap bikin harimu lebih fun & aesthetic! Cocok banget buat tas, jaket, topi, atau koleksi di papan pin. Desain lucu, colorful, dan playful - bisa custom sesuai mood, karakter favorit, atau mix & match sesukamu. Pin ringan, gampang dipasang, dan tahan lama. Daily vibe kamu bakal langsung naik beberapa level, auto IG-worthy!\n\n{SPEC}\n\nMasukin ke keranjang sekarang, jangan sampe ketinggalan vibe aesthetic-mu! Pengiriman aman & cepat, siap bikin koleksi kamu makin hype. Kasih bintang lima kalau puas, biar kita terus hadirkan pin lucu terbaru. Selamat berbelanja & keep it stylish!",
+        "PIN BUTTON": "Pin Button {TOKO} siap bikin outfit harian kamu playful & aesthetic! Cocok di tas, jaket, topi, atau papan koleksi. Desain lucu, colorful, vibe kawaii, dan fun - bisa custom atau koleksi berbagai motif seru untuk teman & squad. Gampang dipasang, ringan, dan tahan lama. Daily outfit kamu auto IG-worthy & vibes naik beberapa level!\n\n{SPEC}\n\nCheckout sekarang, mix & match desain favoritmu! Pengiriman aman & cepat, koleksi langsung hype. Jangan lupa bintang lima kalau puas, biar pin lucu terus hadir. Selamat berbelanja, squad - bikin harimu makin aesthetic & fun!",
+        "JIBBITZ": "Jibbitz {TOKO} bikin sandal kamu makin lucu & aesthetic! Cocok buat crocs, clog, atau sandal berlubang lainnya. Desain colorful, playful, dan gampang dikombinasi - mix & match sesuai mood kamu hari ini. Tinggal tekan ke lubang sandal, nempel kuat, dan bisa dilepas-pasang kapan aja. Cocok juga jadi hadiah lucu buat teman & squad.\n\n{SPEC}\n\nMasukin ke keranjang sekarang, jangan sampe ketinggalan desain favoritmu! Pengiriman aman & cepat. Kasih bintang lima kalau puas, biar kita terus hadirkan charm lucu terbaru. Selamat berbelanja & keep it stylish!"
+      }
+    },
+    "fandom": {
+      "judul": {
+        "PIN AKRILIK": [
+          [
+            "Premium Acrylic",
+            "Limited Run"
+          ],
+          [
+            "Trendsetter Pin",
+            "Bag, Hat, & Jacket Accessory"
+          ],
+          [
+            "Anime & Pop Culture",
+            "Fan Collection"
+          ]
+        ],
+        "PIN BUTTON": [
+          [
+            "Fandom Button",
+            "Squad Approved"
+          ],
+          [
+            "Street Badge",
+            "Limited Edition Drop"
+          ],
+          [
+            "Vibe Icon Button",
+            "Your Daily Hype"
+          ]
+        ],
+        "JIBBITZ": [
+          [
+            "Fandom Flex Charm",
+            "Character Fan Collection"
+          ],
+          [
+            "StreetPop Charm",
+            "PVC Pin Sandal"
+          ],
+          [
+            "NamePop Charm",
+            "Huruf & Initial Pin Sandal"
+          ]
+        ]
+      },
+      "deskripsi": {
+        "PIN AKRILIK": "{TOKO} siap bikin style kamu auto hits & viral! Cocok untuk fans anime, pop culture, musik, atau fandom favorit. Pin akrilik glossy, warna pop, detail tajam, collectible banget. Bisa dipasang di tas, jaket, topi, atau papan koleksi - mau daily outfit atau OOTD, pin ini auto nge-hype. Unik, gampang dipadupadankan, dan bikin style kamu standout setiap hari.\n\n{SPEC}\n\nCheckout sekarang, jangan sampai varian favoritmu sold out! Dikemas rapi, aman, pengiriman cepat. Kalau suka, kasih bintang lima ya - biar koleksi pin hits terus hadir. Selamat berbelanja & tampil beda dengan style Gen Z maksimal!",
+        "PIN BUTTON": "Pin Button {TOKO} bikin style kamu auto viral! Cocok untuk fans anime, musik, pop culture, dan fandom hits. Desain detail, warna pop, collectible, siap bikin daily outfit & OOTD kamu auto nge-hype. Bisa dipasang di tas, jaket, topi, atau papan koleksi - unik, gampang dipadupadankan, dan bikin kamu standout setiap hari.\n\n{SPEC}\n\nCheckout sekarang sebelum sold out! Pengiriman cepat, rapi, aman. Jangan lupa kasih bintang lima kalau puas, biar koleksi pin hits terus hadir. Selamat berbelanja & tampil beda dengan style Gen Z maksimal, squad!",
+        "JIBBITZ": "Jibbitz {TOKO} bikin sandal kamu auto viral! Cocok untuk fans anime, K-pop, game, dan pop culture. Charm akrilik glossy, warna pop, detail tajam, collectible banget. Pasang di crocs, clog, atau sandal berlubang - tekan sekali, langsung nempel kuat. Mix & match sesuai fandom dan mood kamu, bikin sandal biasa jadi statement.\n\n{SPEC}\n\nCheckout sekarang sebelum sold out! Dikemas rapi, aman, pengiriman cepat. Kalau suka, kasih bintang lima ya - biar koleksi charm hits terus hadir. Selamat berbelanja & tampil beda dengan style Gen Z maksimal!"
+      }
+    }
+  }
+}

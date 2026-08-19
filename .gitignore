@@ -1,0 +1,9 @@
+# Foto produk (868 MB) — repo terpisah, lihat foto-upload/
+foto-upload/
+
+# Berkas kerja
+__pycache__/
+*.pyc
+*.bak
+data/*.bak
+~$*.xlsx
