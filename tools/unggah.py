@@ -3,20 +3,41 @@
 
 Dipakai lewat:
     python tools/shopee_mass_upload.py unggah "G:\\My Drive\\JIBBITZ\\PRODUK 00001 - 00050"
-atau lewat tombol "Pilih folder produk" di UI.
+atau lewat tombol "Proses Folder Ini" di UI.
 
-Folder yang dipilih boleh tingkat mana saja — folder seri, folder FOTO PRODUK,
-atau langsung folder satu toko. Isinya ditelusuri sampai sub-folder terdalam.
+Push dipecah jadi beberapa bagian kecil. GitHub lewat HTTPS sering menolak
+kiriman besar dengan galat HTTP 408, jadi tiap bagian dibatasi ukurannya dan
+dikirim satu per satu — kalau satu bagian gagal, bagian yang sudah terkirim
+tetap tercatat dan proses bisa dilanjutkan tanpa mengulang dari awal.
 """
 import os, re, subprocess, sys
 
 import gudang
 
+BATAS_KIRIM = 40 * 1024 * 1024      # ukuran maks. satu commit sebelum di-push
+COBA_ULANG = 3
 
-def _jalankan_git(akar, *argumen):
-    hasil = subprocess.run(['git'] + list(argumen), cwd=akar,
-                           capture_output=True, text=True, encoding='utf-8', errors='replace')
-    return hasil.returncode, (hasil.stdout or '') + (hasil.stderr or '')
+
+def _git(akar, argumen, cetak=None, masukan=None):
+    """Jalankan git sambil menampilkan keluarannya baris demi baris."""
+    proses = subprocess.Popen(
+        ['git'] + list(argumen), cwd=akar,
+        stdin=subprocess.PIPE if masukan is not None else None,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding='utf-8', errors='replace', bufsize=1)
+    if masukan is not None:
+        proses.stdin.write(masukan)
+        proses.stdin.close()
+    baris = []
+    for b in proses.stdout:
+        b = b.rstrip()
+        if not b:
+            continue
+        baris.append(b)
+        if cetak:
+            cetak(b)
+    proses.wait()
+    return proses.returncode, '\n'.join(baris)
 
 
 def deteksi(inti, cfg, folder):
@@ -49,7 +70,7 @@ def deteksi(inti, cfg, folder):
         if not gambar:
             continue
 
-        # toko diambil dari komponen path yang mengandung kata toko/foto + angka
+        # toko diambil dari komponen path yang berpola "TOKO 1" / "toko_2" / "FOTO_3"
         toko = None
         for bagian in os.path.normpath(dirpath).split(os.sep)[::-1]:
             m = re.match(r'^(?:toko|foto)[\s_-]*(\d+)$', bagian.strip(), re.I)
@@ -97,7 +118,38 @@ def deteksi(inti, cfg, folder):
     return temuan, tanpa_seri, tak_dikenal
 
 
-def proses(inti, cfg, folder, push=True):
+def _rekap(temuan):
+    r = {}
+    for t in temuan:
+        k = (t['nama_toko'], t['jenis'], t['seri'] or '(seri belum diketahui)')
+        r[k] = r.get(k, 0) + 1
+    return r
+
+
+def _bagi(temuan, batas=BATAS_KIRIM):
+    """Pecah daftar foto jadi beberapa bagian, masing-masing di bawah batas ukuran."""
+    bagian, sekarang, ukuran = [], [], 0
+    for t in temuan:
+        if sekarang and ukuran + t['ukuran'] > batas:
+            bagian.append(sekarang)
+            sekarang, ukuran = [], 0
+        sekarang.append(t)
+        ukuran += t['ukuran']
+    if sekarang:
+        bagian.append(sekarang)
+    return bagian
+
+
+def _mb(byte):
+    return byte / 1024 ** 2
+
+
+def proses(inti, cfg, folder, push=True, lapor=None):
+    """lapor(tahap, selesai, total) dipanggil untuk memperbarui progress bar."""
+    def maju(tahap, n, total):
+        if lapor:
+            lapor(tahap, n, total)
+
     temuan, tanpa_seri, tak_dikenal = deteksi(inti, cfg, folder)
     if not temuan:
         print('[unggah] tidak ada foto yang dikenali di folder itu')
@@ -105,17 +157,21 @@ def proses(inti, cfg, folder, push=True):
             print('   ! ' + t)
         return
 
-    print('[unggah] {} foto terdeteksi di: {}'.format(len(temuan), folder))
-    rekap = {}
-    for t in temuan:
-        k = (t['nama_toko'], t['jenis'], t['seri'] or '(seri tidak diketahui)')
-        rekap[k] = rekap.get(k, 0) + 1
+    rekap = _rekap(temuan)
+    print('[unggah] folder : {}'.format(folder))
+    print('[unggah] {} foto akan diproses:'.format(len(temuan)))
     for (tk, jn, sr), n in sorted(rekap.items()):
-        print('   {:<15} {:<12} {:<16} {} foto'.format(tk, jn, sr, n))
+        print('   {:<15} {:<12} {:<22} {} foto'.format(tk, jn, sr, n))
+    if tanpa_seri:
+        print('   ! {} SKU belum terdaftar di data/sku.csv, serinya tidak diketahui.'
+              .format(len(tanpa_seri)))
+        print('     Contoh: {}'.format(', '.join(sorted(set(tanpa_seri))[:6])))
+        print('     Jalankan "Impor SKU" dulu supaya foto ini masuk ke listing yang benar.')
 
-    # 1. salin + rename ke foto-upload/
+    # ---------------------------------------------------------------- 1. salin
+    print('[1/3] menyalin & rename ke foto-upload/ …')
     dikecilkan = 0
-    for t in temuan:
+    for i, t in enumerate(temuan, 1):
         tujuan = os.path.join(inti.DIR_FOTO, t['toko'], t['slug'])
         os.makedirs(tujuan, exist_ok=True)
         akhir = os.path.join(tujuan, t['nama_tujuan'])
@@ -123,56 +179,90 @@ def proses(inti, cfg, folder, push=True):
             dikecilkan += 1
         t['file_lokal'] = akhir
         t['ukuran'] = os.path.getsize(akhir)
-    print('[unggah] disalin ke foto-upload/ ({} foto dikecilkan agar di bawah 2 MB)'.format(dikecilkan))
+        maju('salin', i, len(temuan))
+        if i % 25 == 0 or i == len(temuan):
+            print('      {}/{} foto ({:.0f} MB)'.format(
+                i, len(temuan), _mb(sum(x.get('ukuran', 0) for x in temuan[:i]))))
+    total_mb = _mb(sum(t['ukuran'] for t in temuan))
+    print('[1/3] selesai — {} foto, {:.1f} MB, {} dikecilkan agar di bawah 2 MB'.format(
+        len(temuan), total_mb, dikecilkan))
 
-    # 2. simpan dulu ke database, tandai belum terunggah
+    # ---------------------------------------------------------------- 2. database
     base = (cfg['foto'].get('base_url') or '').rstrip('/')
     db = gudang.buka(inti.DB_PATH)
     for t in temuan:
         t['url'] = base + '/' + t['path_repo'] if base else None
         t['diunggah'] = 0
     gudang.simpan(db, temuan)
-    print('[unggah] {} baris disimpan ke {}'.format(len(temuan), inti.DB_PATH))
-
+    print('[2/3] {} baris URL disimpan ke database'.format(len(temuan)))
     if not base:
         print('   ! foto.base_url belum diisi, URL belum bisa dibentuk')
+
     if not push:
-        print('[unggah] push dilewati (--tanpa-push)')
+        print('[3/3] dilewati — upload tidak dicentang')
         db.close()
         return
 
-    # 3. push ke GitHub supaya jsDelivr bisa menyajikannya
-    folder_repo = sorted({os.path.dirname(t['path_repo']) for t in temuan})
-    kode, keluaran = _jalankan_git(inti.AKAR, 'add', '-f', *folder_repo)
-    if kode:
-        print('[unggah] git add gagal:\n' + keluaran.strip())
-        db.close()
-        return
-    kode, keluaran = _jalankan_git(
-        inti.AKAR, '-c', 'user.email=tools@local', '-c', 'user.name=mass-upload',
-        'commit', '-m', 'Foto: {}'.format(', '.join(sorted(rekap and {k[2] for k in rekap}))))
-    if kode and 'nothing to commit' not in keluaran:
-        print('[unggah] git commit gagal:\n' + keluaran.strip())
-        db.close()
-        return
-    print('[unggah] mengunggah ke GitHub, mohon tunggu…')
-    kode, keluaran = _jalankan_git(inti.AKAR, 'push', 'origin', 'HEAD')
-    if kode:
-        print('[unggah] git push gagal:\n' + keluaran.strip())
-        db.close()
-        return
+    # ---------------------------------------------------------------- 3. push bertahap
+    bagian = _bagi(temuan)
+    print('[3/3] mengunggah ke GitHub: {:.1f} MB dipecah jadi {} bagian '
+          '(maks. {:.0f} MB per bagian)'.format(total_mb, len(bagian), _mb(BATAS_KIRIM)))
 
-    gudang.tandai_terunggah(db, [t['path_repo'] for t in temuan])
+    berhasil = 0
+    for nomor, kelompok in enumerate(bagian, 1):
+        mb = _mb(sum(t['ukuran'] for t in kelompok))
+        label = 'bagian {}/{} — {} foto, {:.1f} MB'.format(nomor, len(bagian), len(kelompok), mb)
+        print('   > {}'.format(label))
+        maju('unggah', nomor - 1, len(bagian))
+
+        daftar = '\n'.join(t['path_repo'] for t in kelompok) + '\n'
+        kode, keluaran = _git(inti.AKAR, ['add', '-f', '--pathspec-from-file=-'], masukan=daftar)
+        if kode:
+            print('     git add gagal:\n     ' + keluaran.replace('\n', '\n     '))
+            break
+
+        kode, keluaran = _git(inti.AKAR, [
+            '-c', 'user.email=tools@local', '-c', 'user.name=mass-upload',
+            'commit', '-m', 'Foto {} ({})'.format(
+                ', '.join(sorted({k[2] for k in _rekap(kelompok)})), label)])
+        if kode and 'nothing to commit' not in keluaran:
+            print('     git commit gagal:\n     ' + keluaran.replace('\n', '\n     '))
+            break
+
+        terkirim = False
+        for percobaan in range(1, COBA_ULANG + 1):
+            if percobaan > 1:
+                print('     percobaan ulang {}/{}…'.format(percobaan, COBA_ULANG))
+            kode, keluaran = _git(inti.AKAR, [
+                # kiriman besar lewat HTTPS mudah kena batas waktu; longgarkan buffer
+                '-c', 'http.postBuffer=157286400',
+                '-c', 'http.version=HTTP/1.1',
+                '-c', 'http.lowSpeedLimit=1000',
+                '-c', 'http.lowSpeedTime=300',
+                'push', '--progress', 'origin', 'HEAD'],
+                cetak=lambda b: print('       ' + b))
+            if kode == 0:
+                terkirim = True
+                break
+        if not terkirim:
+            print('     bagian ini gagal terkirim setelah {} percobaan.'.format(COBA_ULANG))
+            print('     Bagian yang sudah berhasil tetap tersimpan — jalankan lagi '
+                  'untuk melanjutkan sisanya.')
+            break
+
+        gudang.tandai_terunggah(db, [t['path_repo'] for t in kelompok])
+        berhasil += 1
+        maju('unggah', nomor, len(bagian))
+        print('     terkirim ({}/{} bagian selesai)'.format(berhasil, len(bagian)))
+
     n, u = gudang.jumlah(db)
     db.close()
-    print('[unggah] selesai. Database: {} foto, {} sudah di GitHub'.format(n, u))
-    if base:
+    print('[3/3] {} dari {} bagian terkirim. Database: {} foto, {} sudah di GitHub'.format(
+        berhasil, len(bagian), n, u))
+    if berhasil and base:
         print('[unggah] contoh URL untuk dicek di browser:')
         print('       ' + temuan[0]['url'])
         print('   Catatan: jsDelivr butuh beberapa menit sebelum berkas baru bisa diakses.')
-
-    for k in tanpa_seri[:5]:
-        print('   ! SKU belum ada di sku.csv: {}'.format(k))
     for t in tak_dikenal[:5]:
         print('   ! dilewati: {}'.format(t))
 
@@ -182,16 +272,16 @@ def lapor_deteksi(inti, cfg, folder):
     temuan, tanpa_seri, tak_dikenal = deteksi(inti, cfg, folder)
     print('[deteksi] folder : {}'.format(os.path.abspath(folder)))
     print('[deteksi] {} foto dikenali, {} berkas dilewati'.format(len(temuan), len(tak_dikenal)))
-    rekap = {}
-    for t in temuan:
-        k = (t['nama_toko'], t['jenis'], t['seri'] or '(seri belum diketahui)')
-        rekap[k] = rekap.get(k, 0) + 1
-    for (tk, jn, sr), n in sorted(rekap.items()):
+    for (tk, jn, sr), n in sorted(_rekap(temuan).items()):
         print('   {:<15} {:<12} {:<22} {} foto'.format(tk, jn, sr, n))
     if temuan:
+        besar = sum(os.path.getsize(t['sumber']) for t in temuan)
+        print('[deteksi] total {:.1f} MB, perkiraan {} bagian saat diunggah'.format(
+            _mb(besar), max(1, int(besar // BATAS_KIRIM) + 1)))
         print('[deteksi] contoh tujuan: {} -> {}'.format(
             os.path.basename(temuan[0]['sumber']), temuan[0]['path_repo']))
-    for k in tanpa_seri[:5]:
-        print('   ! SKU belum ada di sku.csv: {}'.format(k))
+    if tanpa_seri:
+        print('   ! {} SKU belum ada di data/sku.csv: {}'.format(
+            len(tanpa_seri), ', '.join(sorted(set(tanpa_seri))[:6])))
     for t in tak_dikenal[:5]:
         print('   ! dilewati: {}'.format(t))
