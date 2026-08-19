@@ -124,8 +124,10 @@ class Aplikasi(tk.Tk):
                    command=lambda: self.buka(inti.DIR_OUT)).pack(side='left')
         ttk.Button(b3, text='Buka folder foto',
                    command=lambda: self.buka(inti.DIR_FOTO)).pack(side='left', padx=6)
-        self.putar = ttk.Progressbar(b3, mode='indeterminate', length=150)
+        self.putar = ttk.Progressbar(b3, mode='indeterminate', length=220)
         self.putar.pack(side='right')
+        self.lbl_maju = ttk.Label(b3, text='', foreground='#555')
+        self.lbl_maju.pack(side='right', padx=8)
 
         log = ttk.LabelFrame(self, text=' Log ')
         log.pack(fill='both', expand=True, **pad)
@@ -292,11 +294,34 @@ class Aplikasi(tk.Tk):
             messagebox.showinfo('Belum ada', 'Folder belum dibuat:\n{}'.format(folder))
 
     # ------------------------------------------------------------------ eksekusi
+    TAHAP = {'salin': 'Menyalin foto', 'unggah': 'Mengunggah ke GitHub'}
+
     def _mulai(self):
         self.sibuk = True
         for b in self.tombol:
             b.state(['disabled'])
+        self.putar.configure(mode='indeterminate')
         self.putar.start(12)
+        self.lbl_maju.config(text='')
+
+    def _selesai(self):
+        self.sibuk = False
+        self.putar.stop()
+        self.putar.configure(mode='indeterminate', value=0)
+        self.lbl_maju.config(text='')
+        for b in self.tombol:
+            b.state(['!disabled'])
+        if not self.temuan:
+            self.btn_proses.state(['disabled'])
+        self.perbarui_status()
+
+    def _maju(self, tahap, n, total):
+        """Ubah progress bar jadi terukur, dipanggil dari antrean."""
+        if self.putar['mode'] != 'determinate':
+            self.putar.stop()
+            self.putar.configure(mode='determinate', maximum=100)
+        self.putar['value'] = (n / total * 100) if total else 0
+        self.lbl_maju.config(text='{}: {}/{}'.format(self.TAHAP.get(tahap, tahap), n, total))
 
     def jalankan(self, perintah, sumber=None):
         if self.sibuk:
@@ -319,7 +344,8 @@ class Aplikasi(tk.Tk):
             if perintah == 'impor':
                 inti.perintah_impor(cfg, sumber)
             elif perintah == 'unggah':
-                modul_unggah.proses(inti, cfg, sumber, push=self.var_push.get())
+                modul_unggah.proses(inti, cfg, sumber, push=self.var_push.get(),
+                                    lapor=lambda *a: self.antrean.put(('maju', a)))
             elif perintah == 'url':
                 inti.perintah_url(cfg, inti.baca_sku())
             else:
@@ -344,13 +370,9 @@ class Aplikasi(tk.Tk):
                 if isinstance(butir, tuple):
                     jenis, isi = butir
                     if jenis == 'usai':
-                        self.sibuk = False
-                        self.putar.stop()
-                        for b in self.tombol:
-                            b.state(['!disabled'])
-                        if not self.temuan:
-                            self.btn_proses.state(['disabled'])
-                        self.perbarui_status()
+                        self._selesai()
+                    elif jenis == 'maju':
+                        self._maju(*isi)
                     elif jenis == 'deteksi':
                         self._tampilkan_deteksi(*isi)
                     else:
