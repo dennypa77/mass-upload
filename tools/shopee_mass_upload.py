@@ -33,6 +33,31 @@ DIR_FOTO = os.path.join(AKAR, 'foto-upload')
 DIR_OUT = os.path.join(AKAR, 'output')
 MANIFEST = os.path.join(DIR_FOTO, '_manifest.json')
 
+# Saringan uji coba. Kalau salah satu diisi, tools hanya memproses yang cocok dan
+# hasilnya ditulis ke folder terpisah (output/uji, data/uji) supaya berkas asli aman.
+SARING = {'toko': None, 'jenis': None, 'seri': None}
+
+
+def menyaring():
+    return any(SARING.values())
+
+
+def cocok(nilai, kunci):
+    """Cocok kalau saringan kosong, atau teksnya terkandung (tidak peka huruf besar)."""
+    pola = SARING.get(kunci)
+    return not pola or pola.lower() in str(nilai).lower()
+
+
+def dir_keluaran():
+    return os.path.join(DIR_OUT, 'uji') if menyaring() else DIR_OUT
+
+
+def path_url():
+    if menyaring():
+        return os.path.join(AKAR, 'data', 'uji', 'url_foto.csv')
+    return URL_CSV
+
+
 EKSTENSI = ('.png', '.jpg', '.jpeg')
 BATAS_FOTO = 2 * 1024 * 1024        # batas ukuran foto Shopee
 MAKS_JUDUL, MIN_DESK, MAKS_DESK = 255, 20, 3000
@@ -57,10 +82,17 @@ def baca_sku():
             for wajib in ('jenis', 'seri', 'varian'):
                 if not baris.get(wajib):
                     sys.exit('sku.csv baris {}: kolom "{}" kosong'.format(i, wajib))
+            kode = baris.get('kode_seri') or kode_seri(baris['seri'])
+            if not cocok(baris['jenis'], 'jenis'):
+                continue
+            if not (cocok(baris['seri'], 'seri') or cocok(kode, 'seri')):
+                continue
             data.setdefault(baris['jenis'].upper(), OrderedDict()) \
                 .setdefault(baris['seri'], []).append(
-                    {'varian': baris['varian'], 'sku': baris['sku'],
-                     'kode_seri': baris.get('kode_seri') or kode_seri(baris['seri'])})
+                    {'varian': baris['varian'], 'sku': baris['sku'], 'kode_seri': kode})
+    if not data:
+        sys.exit('Tidak ada SKU yang cocok dengan saringan: {}'.format(
+            {k: v for k, v in SARING.items() if v}))
     return data
 
 
@@ -207,6 +239,9 @@ def perintah_foto(cfg, data):
                 if not os.path.isdir(dir_toko) or not m:
                     continue
                 toko = 'toko' + m.group(1)
+                if not (cocok(toko, 'toko') or cocok(sub, 'toko')
+                        or cocok(_nama_toko_dari(cfg, toko), 'toko')):
+                    continue
                 tujuan = os.path.join(DIR_FOTO, toko, j['slug'])
                 os.makedirs(tujuan, exist_ok=True)
                 for f in sorted(os.listdir(dir_toko)):
@@ -245,6 +280,13 @@ def baca_manifest():
         return json.load(f)
 
 
+def _nama_toko_dari(cfg, folder_toko):
+    for t in cfg['toko']:
+        if t['folder_foto'] == folder_toko:
+            return t['nama']
+    return folder_toko
+
+
 def _kunci_toko(nama):
     """'TOKO 1' / 'Toko_1' / 'toko1' -> 'toko1'. None kalau tidak ada angkanya."""
     m = re.search(r'(\d+)', nama)
@@ -266,11 +308,15 @@ def pindai_foto(cfg):
         return hasil, tak_dikenal
     slug_dari_prefix = {j['prefix_sku'].upper(): j['slug'] for j in cfg['jenis'].values()}
     slug_sah = {j['slug'] for j in cfg['jenis'].values()}
+    nama_jenis = {j['slug']: nama for nama, j in cfg['jenis'].items()}
 
     for folder in sorted(os.listdir(DIR_FOTO)):
         akar_toko = os.path.join(DIR_FOTO, folder)
         toko = _kunci_toko(folder)
         if not os.path.isdir(akar_toko) or folder.startswith(('.', '_')) or not toko:
+            continue
+        if not (cocok(toko, 'toko') or cocok(folder, 'toko')
+                or cocok(_nama_toko_dari(cfg, toko), 'toko')):
             continue
         for dirpath, _, berkas in os.walk(akar_toko):
             if os.sep + '.' in dirpath:
@@ -286,6 +332,8 @@ def pindai_foto(cfg):
                 if not slug:
                     tak_dikenal.append(rel)
                     continue
+                if not (cocok(slug, 'jenis') or cocok(nama_jenis.get(slug, ''), 'jenis')):
+                    continue
                 hasil.setdefault(toko, {}).setdefault(slug, {})[kunci] = rel
     return hasil, tak_dikenal
 
@@ -294,7 +342,7 @@ JUDUL_URL = ['nama_toko', 'folder_toko', 'jenis', 'kunci', 'tipe',
              'file_lokal', 'url', 'ukuran_byte']
 
 
-def perintah_url(cfg):
+def perintah_url(cfg, data=None):
     """Pindai foto per toko, lalu tulis daftar 'file lokal -> URL'.
 
     Menghasilkan satu berkas gabungan (data/url_foto.csv) dan satu berkas per
@@ -313,6 +361,20 @@ def perintah_url(cfg):
     nama_toko = {t['folder_foto']: t['nama'] for t in cfg['toko']}
     jenis_slug = {j['slug']: nama for nama, j in cfg['jenis'].items()}
 
+    # kalau menyaring per seri, hanya SKU pada seri itu (plus foto utamanya) yang diambil
+    izin = None
+    if SARING.get('seri') and data:
+        izin = set()
+        for seri_map in data.values():
+            for desain in seri_map.values():
+                izin.update(d['sku'].upper() for d in desain)
+                izin.update('{}-UTAMA{}'.format(desain[0]['kode_seri'].upper(), n) for n in (1, 2, 3))
+
+    def diizinkan(kunci):
+        if izin is None:
+            return True
+        return kunci in izin or any(kunci.endswith(x) for x in izin if 'UTAMA' in x)
+
     per_toko, semua = OrderedDict(), []
     for toko in sorted(indeks):
         label = nama_toko.get(toko)
@@ -322,6 +384,8 @@ def perintah_url(cfg):
         baris = []
         for slug in sorted(indeks[toko]):
             for kunci, rel in sorted(indeks[toko][slug].items()):
+                if not diizinkan(kunci):
+                    continue
                 lokal = os.path.join(DIR_FOTO, rel.replace('/', os.sep))
                 baris.append([label, toko, jenis_slug.get(slug, slug), kunci,
                               'utama' if '-UTAMA' in kunci.upper() else 'varian',
@@ -337,14 +401,15 @@ def perintah_url(cfg):
             w.writerow(JUDUL_URL)
             w.writerows(baris)
 
-    tulis(URL_CSV, semua)
-    dir_toko = os.path.join(os.path.dirname(URL_CSV), 'url')
+    berkas_utama = path_url()
+    tulis(berkas_utama, semua)
+    dir_toko = os.path.join(os.path.dirname(berkas_utama), 'url')
     for label, baris in per_toko.items():
         aman = re.sub(r'[\\/:*?"<>|]', '_', label)
         tulis(os.path.join(dir_toko, 'url_foto - {}.csv'.format(aman)), baris)
 
     print('[url] base: {}'.format(base))
-    print('[url] {} URL -> {}'.format(len(semua), URL_CSV))
+    print('[url] {} URL -> {}'.format(len(semua), berkas_utama))
     for label, baris in per_toko.items():
         rinci = OrderedDict()
         for b in baris:
@@ -354,6 +419,25 @@ def perintah_url(cfg):
             label, len(baris), utama, len(baris) - utama,
             ' · '.join('{} {}'.format(v, k.lower()) for k, v in rinci.items())))
     print('[url] per toko -> {}'.format(dir_toko))
+
+    # Foto hanya bisa diakses Shopee setelah ada di repo. Tunjukkan persis apa yang
+    # perlu di-upload — berguna waktu uji coba sebagian.
+    rel_semua = sorted({b[6][len(base) + 1:] for b in semua})
+    folder = sorted({os.path.dirname(r) for r in rel_semua})
+    print('[url] {} file di {} folder perlu ada di repo:'.format(len(rel_semua), len(folder)))
+    for f in folder[:8]:
+        n = sum(1 for r in rel_semua if os.path.dirname(r) == f)
+        print('       {}/  ({} file)'.format(f, n))
+    if len(folder) > 8:
+        print('       ... dan {} folder lain'.format(len(folder) - 8))
+    awalan = os.path.relpath(DIR_FOTO, AKAR)
+    print('[url] perintah upload:')
+    print('       cd "{}"'.format(AKAR))
+    for f in folder[:4]:
+        print('       git add -f "{}"'.format(os.path.join(awalan, f.replace('/', os.sep))))
+    if len(folder) > 4:
+        print('       (dan {} folder lainnya)'.format(len(folder) - 4))
+    print('       git commit -m "foto uji coba" && git push')
 
     besar = [b for b in semua if b[7] and b[7] > BATAS_FOTO]
     if besar:
@@ -503,6 +587,8 @@ def kumpulkan(cfg, data):
 
     paket = OrderedDict()
     for toko in cfg['toko']:
+        if not (cocok(toko['nama'], 'toko') or cocok(toko['folder_foto'], 'toko')):
+            continue
         per_template = OrderedDict()
         for jenis in data:
             if jenis not in cfg['jenis']:
@@ -541,7 +627,7 @@ def perintah_build(cfg, data):
     terkunci = []
     for berkas, (tpl, listings) in paket.items():
         try:
-            n = tulis_excel(cfg, os.path.join(AKAR, tpl), os.path.join(DIR_OUT, berkas), listings)
+            n = tulis_excel(cfg, os.path.join(AKAR, tpl), os.path.join(dir_keluaran(), berkas), listings)
         except PermissionError:
             terkunci.append(berkas)
             print('[build] {:<58} DILEWATI - berkas sedang dibuka'.format(berkas))
@@ -549,7 +635,7 @@ def perintah_build(cfg, data):
         berfoto = sum(1 for L in listings if L['utama'][0])
         print('[build] {:<58} {} listing / {} baris / {} berfoto'.format(
             berkas, len(listings), n, berfoto))
-    print('[build] hasil di: {}'.format(DIR_OUT))
+    print('[build] hasil di: {}'.format(dir_keluaran()))
     if terkunci:
         print('   ! {} berkas tidak bisa ditimpa karena sedang dibuka di Excel.'.format(len(terkunci)))
         print('     Tutup dulu berkas berikut lalu jalankan "build" lagi:')
@@ -561,7 +647,14 @@ def main():
     p = argparse.ArgumentParser(description='Pembuat file Shopee Mass Upload')
     p.add_argument('perintah', choices=['impor', 'foto', 'url', 'cek', 'build', 'semua'])
     p.add_argument('sumber', nargs='?', help='untuk "impor": file ekspor sheet SKU (.xlsx/.csv)')
+    p.add_argument('--toko', help='uji coba: batasi ke satu toko, mis. "toko1" atau "Hangs"')
+    p.add_argument('--jenis', help='uji coba: batasi ke satu jenis, mis. "JIBBITZ"')
+    p.add_argument('--seri', help='uji coba: batasi ke satu seri, mis. "CORTIS"')
     a = p.parse_args()
+    SARING.update(toko=a.toko, jenis=a.jenis, seri=a.seri)
+    if menyaring():
+        print('[uji] saringan aktif: {} -> hasil ditulis ke folder "uji", berkas asli tidak diubah'
+              .format({k: v for k, v in SARING.items() if v}))
     cfg = baca_config()
 
     if a.perintah == 'impor':
@@ -577,7 +670,7 @@ def main():
     if a.perintah in ('foto', 'semua'):
         perintah_foto(cfg, data)
     if a.perintah == 'url' or (a.perintah == 'semua' and cfg['foto'].get('base_url')):
-        perintah_url(cfg)
+        perintah_url(cfg, data)
     if a.perintah in ('cek', 'semua'):
         perintah_cek(cfg, data)
     if a.perintah in ('build', 'semua'):

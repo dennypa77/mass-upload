@@ -74,6 +74,23 @@ class Aplikasi(tk.Tk):
                             '— kosongkan kalau foto belum diupload',
                   foreground='#666').pack(anchor='w', padx=10, pady=(0, 8))
 
+        uji = ttk.LabelFrame(self, text=' Uji coba — kosongkan untuk memproses semua ')
+        uji.pack(fill='x', **pad)
+        bu = ttk.Frame(uji)
+        bu.pack(fill='x', padx=10, pady=8)
+        self.saring = {}
+        for label, kunci, contoh in (('Toko', 'toko', 'mis. Hangs on You'),
+                                     ('Jenis', 'jenis', 'mis. JIBBITZ'),
+                                     ('Seri', 'seri', 'mis. CORTIS')):
+            ttk.Label(bu, text=label + ':').pack(side='left')
+            v = tk.StringVar()
+            e = ttk.Entry(bu, textvariable=v, width=18)
+            e.pack(side='left', padx=(4, 14))
+            self.saring[kunci] = v
+        ttk.Label(uji, text='Kalau diisi, hasil ditulis ke output/uji dan data/uji — '
+                            'berkas asli tidak tersentuh.',
+                  foreground='#666').pack(anchor='w', padx=10, pady=(0, 8))
+
         aksi = ttk.LabelFrame(self, text=' Langkah ')
         aksi.pack(fill='x', **pad)
         grid = ttk.Frame(aksi)
@@ -181,11 +198,15 @@ class Aplikasi(tk.Tk):
                 filetypes=[('Excel / CSV', '*.xlsx *.xlsm *.csv'), ('Semua berkas', '*.*')])
             if not sumber:
                 return
+        inti.SARING.update({k: (v.get().strip() or None) for k, v in self.saring.items()})
         self.sibuk = True
         for b in self.tombol:
             b.state(['disabled'])
         self.putar.start(12)
-        self.tulis('\n{}\n>>> {}\n'.format('─' * 78, perintah.upper()), 'penting')
+        aktif = {k: v for k, v in inti.SARING.items() if v}
+        self.tulis('\n{}\n>>> {}{}\n'.format(
+            '─' * 78, perintah.upper(),
+            '   [uji coba: {}]'.format(aktif) if aktif else ''), 'penting')
         threading.Thread(target=self._kerja, args=(perintah, sumber), daemon=True).start()
 
     def _kerja(self, perintah, sumber):
@@ -196,13 +217,13 @@ class Aplikasi(tk.Tk):
             if perintah == 'impor':
                 inti.perintah_impor(cfg, sumber)
             elif perintah == 'url':
-                inti.perintah_url(cfg)
+                inti.perintah_url(cfg, inti.baca_sku())
             else:
                 data = inti.baca_sku()
                 if perintah in ('foto', 'semua'):
                     inti.perintah_foto(cfg, data)
                 if perintah == 'semua' and cfg['foto'].get('base_url'):
-                    inti.perintah_url(cfg)
+                    inti.perintah_url(cfg, data)
                 if perintah in ('cek', 'semua'):
                     inti.perintah_cek(cfg, data)
                 if perintah in ('build', 'semua'):

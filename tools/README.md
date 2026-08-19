@@ -103,6 +103,46 @@ G:\My Drive\ (foto lokal) ──► foto ──► foto-upload/ ──► push k
    foto ditambahkan manual lewat Seller Centre).
 3. **`build`** — menghasilkan satu file Excel per toko per template kategori.
 
+## Uji coba sebagian dulu
+
+Sebelum memproses semua 45 listing dan mengupload 868 MB foto, coba satu bagian kecil dulu.
+Isi kotak **Toko / Jenis / Seri** di UI, atau pakai opsi di baris perintah:
+
+```
+python tools/shopee_mass_upload.py url   --toko toko3 --jenis JIBBITZ --seri CORTIS
+python tools/shopee_mass_upload.py build --toko toko3 --jenis JIBBITZ --seri CORTIS
+```
+
+Pencocokan tidak peka huruf besar dan cukup sebagian kata — `--toko hangs`, `--toko toko3`,
+dan `--toko "Hangs on You"` sama saja.
+
+Selama ada saringan aktif, hasil ditulis ke **folder terpisah** supaya berkas asli aman:
+
+| Tanpa saringan | Dengan saringan |
+|---|---|
+| `data/url_foto.csv` | `data/uji/url_foto.csv` |
+| `data/url/` | `data/uji/url/` |
+| `output/` | `output/uji/` |
+
+Perintah `url` sekalian menunjukkan folder foto mana yang perlu ada di repo, lengkap dengan
+perintah git-nya:
+
+```
+[url] 53 file di 1 folder perlu ada di repo:
+       toko3/jibbitz/  (53 file)
+[url] perintah upload:
+       cd "E:\Project\Mass upload shopee"
+       git add -f "foto-upload\toko3\jibbitz"
+       git commit -m "foto uji coba" && git push
+```
+
+`foto-upload/` sengaja masuk `.gitignore` supaya 868 MB tidak ikut ter-commit tanpa sengaja —
+karena itu perintah di atas memakai `git add -f`. Upload bertahap per folder, jangan sekaligus.
+
+Alur uji yang disarankan: `url` untuk satu seri → push folder fotonya → buka salah satu URL
+di browser untuk memastikan jsDelivr sudah melayaninya → `build` → upload satu berkas Excel
+ke Shopee → cek fotonya muncul. Kalau beres, baru lanjut ke sisanya.
+
 ## Mengisi `data/sku.csv` dari Google Sheet
 
 Di Google Sheet SKU: **File → Download → Microsoft Excel (.xlsx)**, lalu:

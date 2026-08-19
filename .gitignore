@@ -1,4 +1,4 @@
-# Foto produk (868 MB) — repo terpisah, lihat foto-upload/
+# Foto produk - jangan di-commit borongan; upload bertahap saat uji coba
 foto-upload/
 
 # Berkas kerja
@@ -7,3 +7,7 @@ __pycache__/
 *.bak
 data/*.bak
 ~$*.xlsx
+
+# hasil uji coba sebagian
+data/uji/
+output/uji/
