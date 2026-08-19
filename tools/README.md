@@ -26,9 +26,35 @@ Lewat baris perintah, jalankan dari folder utama project (bukan dari dalam `tool
 | `python tools/shopee_mass_upload.py build` | Membuat file Excel di `output/` |
 | `python tools/shopee_mass_upload.py semua` | foto + url + cek + build |
 
-## Daftar URL: `data/url_foto.csv`
+## Daftar URL: `data/url_foto.csv` + per toko
 
-Perintah `url` menyimpan pemetaan lengkap dari setiap file foto lokal ke alamat publiknya:
+Perintah `url` **memindai langsung isi `foto-upload/`** (semua file PNG/JPG, sampai ke
+sub-folder terdalam) lalu memetakannya ke alamat publik. Karena memindai folder — bukan
+membaca catatan lama — foto yang Anda tambah, ganti, atau hapus manual ikut terbaca.
+
+Toko dikenali dari **folder tingkat pertama**, dan angkanya yang dipakai: `toko1`, `TOKO 1`,
+`Toko_1` sama-sama dibaca sebagai toko 1, lalu dicocokkan ke nama toko lewat
+`config.json` → `toko` → `folder_foto`. Susunan di dalamnya bebas:
+
+```
+foto-upload/toko1/jibbitz/JB-0000001.png      <- hasil perintah "foto"
+foto-upload/toko1/JB-0000001.png              <- langsung di folder toko
+foto-upload/TOKO 3/apa saja/PB-0000001.png    <- sub-folder bebas
+```
+
+Jenis produk diambil dari nama sub-folder; kalau tidak cocok, ditebak dari prefix nama
+file (`JB-`/`PA-`/`PB-`). File yang tidak bisa dikenali dilaporkan, bukan didiamkan.
+
+Hasilnya dua macam:
+
+| Berkas | Isi |
+|---|---|
+| `data/url_foto.csv` | semua toko digabung |
+| `data/url/url_foto - Hangs on You.csv` | khusus satu toko — dipakai saat mengupload toko itu |
+| `data/url/url_foto - Graphica Key.csv` | |
+| `data/url/url_foto - Kaitin.aja.csv` | |
+
+Kolomnya:
 
 | Kolom | Isi |
 |---|---|

@@ -12,7 +12,7 @@
       "foto2.png",
       "foto3.png"
     ],
-    "base_url": null,
+    "base_url": "https://cdn.jsdelivr.net/gh/dennypa77/mass-upload@main/foto-upload",
     "_base_url": "Isi setelah repo GitHub dibuat, contoh: https://cdn.jsdelivr.net/gh/username/repo@main"
   },
   "jenis": {

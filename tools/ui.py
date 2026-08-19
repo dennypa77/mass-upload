@@ -134,7 +134,11 @@ class Aplikasi(tk.Tk):
             teks_sku = '{} SKU · {} jenis · {} seri'.format(n_sku, len(data), n_seri)
         except SystemExit:
             teks_sku = 'data/sku.csv belum ada — mulai dari langkah 1'
-        n_foto = sum(len(v) for t in inti.baca_manifest().values() for v in t.values())
+        indeks, _ = inti.pindai_foto(cfg)
+        n_foto = sum(len(v) for t in indeks.values() for v in t.values())
+        rinci_toko = ' · '.join(
+            '{}: {}'.format(t['nama'], sum(len(v) for v in indeks.get(t['folder_foto'], {}).values()))
+            for t in cfg['toko'])
         n_out = len([f for f in os.listdir(inti.DIR_OUT)
                      if f.endswith('.xlsx')]) if os.path.isdir(inti.DIR_OUT) else 0
         self.lbl_status.config(text='\n'.join([
@@ -142,6 +146,7 @@ class Aplikasi(tk.Tk):
             'Toko     : ' + ', '.join(t['nama'] for t in cfg['toko']),
             'Foto     : {} file siap · URL {}'.format(
                 n_foto, 'aktif' if cfg['foto'].get('base_url') else 'belum diisi'),
+            '           ' + (rinci_toko if n_foto else '(belum ada foto)'),
             'Output   : {} file Excel'.format(n_out),
         ]))
 

@@ -245,47 +245,125 @@ def baca_manifest():
         return json.load(f)
 
 
+def _kunci_toko(nama):
+    """'TOKO 1' / 'Toko_1' / 'toko1' -> 'toko1'. None kalau tidak ada angkanya."""
+    m = re.search(r'(\d+)', nama)
+    return 'toko' + m.group(1) if m else None
+
+
+def pindai_foto(cfg):
+    """Pindai isi foto-upload/ dan kelompokkan per toko + jenis produk.
+
+    Menelusuri semua sub-folder, jadi susunannya boleh:
+        foto-upload/toko1/jibbitz/JB-0000001.png     (hasil perintah "foto")
+        foto-upload/toko1/JB-0000001.png             (langsung di folder toko)
+        foto-upload/TOKO 3/apa saja/PB-0000001.png   (sub-folder bebas)
+    Jenis produk diambil dari nama sub-folder; kalau tidak cocok, ditebak dari
+    prefix nama file (JB/PA/PB). Kembaliannya {toko: {slug: {kunci: path relatif}}}.
+    """
+    hasil, tak_dikenal = {}, []
+    if not os.path.isdir(DIR_FOTO):
+        return hasil, tak_dikenal
+    slug_dari_prefix = {j['prefix_sku'].upper(): j['slug'] for j in cfg['jenis'].values()}
+    slug_sah = {j['slug'] for j in cfg['jenis'].values()}
+
+    for folder in sorted(os.listdir(DIR_FOTO)):
+        akar_toko = os.path.join(DIR_FOTO, folder)
+        toko = _kunci_toko(folder)
+        if not os.path.isdir(akar_toko) or folder.startswith(('.', '_')) or not toko:
+            continue
+        for dirpath, _, berkas in os.walk(akar_toko):
+            if os.sep + '.' in dirpath:
+                continue
+            bagian = os.path.relpath(dirpath, akar_toko).split(os.sep)
+            slug_folder = next((b for b in bagian if b in slug_sah), None)
+            for f in sorted(berkas):
+                if not f.lower().endswith(EKSTENSI):
+                    continue
+                kunci = os.path.splitext(f)[0].upper()
+                slug = slug_folder or slug_dari_prefix.get(kunci.split('-')[0])
+                rel = os.path.relpath(os.path.join(dirpath, f), DIR_FOTO).replace(os.sep, '/')
+                if not slug:
+                    tak_dikenal.append(rel)
+                    continue
+                hasil.setdefault(toko, {}).setdefault(slug, {})[kunci] = rel
+    return hasil, tak_dikenal
+
+
+JUDUL_URL = ['nama_toko', 'folder_toko', 'jenis', 'kunci', 'tipe',
+             'file_lokal', 'url', 'ukuran_byte']
+
+
 def perintah_url(cfg):
-    """Tulis daftar pemetaan file foto lokal -> URL publik ke data/url_foto.csv."""
-    manifest = baca_manifest()
-    if not manifest:
-        sys.exit('Manifest foto belum ada. Jalankan perintah "foto" dulu.')
+    """Pindai foto per toko, lalu tulis daftar 'file lokal -> URL'.
+
+    Menghasilkan satu berkas gabungan (data/url_foto.csv) dan satu berkas per
+    toko (data/url/url_foto - <Nama Toko>.csv) supaya mudah dipakai saat
+    mengupload toko tertentu.
+    """
     base = (cfg['foto'].get('base_url') or '').rstrip('/')
     if not base:
         sys.exit('foto.base_url di config.json masih kosong.\n'
                  'Isi dulu, contoh: "https://cdn.jsdelivr.net/gh/username/repo@main"')
 
+    indeks, tak_dikenal = pindai_foto(cfg)
+    if not indeks:
+        sys.exit('Tidak ada foto di {}. Jalankan perintah "foto" dulu.'.format(DIR_FOTO))
+
     nama_toko = {t['folder_foto']: t['nama'] for t in cfg['toko']}
     jenis_slug = {j['slug']: nama for nama, j in cfg['jenis'].items()}
 
-    baris = []
-    for toko in sorted(manifest):
-        for slug in sorted(manifest[toko]):
-            for kunci, rel in sorted(manifest[toko][slug].items()):
+    per_toko, semua = OrderedDict(), []
+    for toko in sorted(indeks):
+        label = nama_toko.get(toko)
+        if not label:
+            print('   ! folder "{}" tidak terdaftar di config.json -> toko -> folder_foto'.format(toko))
+            label = toko
+        baris = []
+        for slug in sorted(indeks[toko]):
+            for kunci, rel in sorted(indeks[toko][slug].items()):
                 lokal = os.path.join(DIR_FOTO, rel.replace('/', os.sep))
-                baris.append([
-                    nama_toko.get(toko, toko), toko, jenis_slug.get(slug, slug), kunci,
-                    'utama' if '-utama' in kunci else 'varian',
-                    lokal, base + '/' + rel,
-                    os.path.getsize(lokal) if os.path.exists(lokal) else '',
-                ])
+                baris.append([label, toko, jenis_slug.get(slug, slug), kunci,
+                              'utama' if '-UTAMA' in kunci.upper() else 'varian',
+                              lokal, base + '/' + rel,
+                              os.path.getsize(lokal) if os.path.exists(lokal) else ''])
+        per_toko[label] = baris
+        semua += baris
 
-    os.makedirs(os.path.dirname(URL_CSV), exist_ok=True)
-    with open(URL_CSV, 'w', encoding='utf-8-sig', newline='') as f:
-        w = csv.writer(f)
-        w.writerow(['nama_toko', 'folder_toko', 'jenis', 'kunci', 'tipe',
-                    'file_lokal', 'url', 'ukuran_byte'])
-        w.writerows(baris)
+    def tulis(path, baris):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8-sig', newline='') as f:
+            w = csv.writer(f)
+            w.writerow(JUDUL_URL)
+            w.writerows(baris)
 
-    hilang = sum(1 for b in baris if not b[7])
-    print('[url] {} URL ditulis ke {}'.format(len(baris), URL_CSV))
+    tulis(URL_CSV, semua)
+    dir_toko = os.path.join(os.path.dirname(URL_CSV), 'url')
+    for label, baris in per_toko.items():
+        aman = re.sub(r'[\\/:*?"<>|]', '_', label)
+        tulis(os.path.join(dir_toko, 'url_foto - {}.csv'.format(aman)), baris)
+
     print('[url] base: {}'.format(base))
-    for t in sorted({b[0] for b in baris}):
-        n = sum(1 for b in baris if b[0] == t)
-        u = sum(1 for b in baris if b[0] == t and b[4] == 'utama')
-        print('   {:<15} {} URL ({} utama / {} varian)'.format(t, n, u, n - u))
-    if hilang:
-        print('   ! {} file terdaftar di manifest tapi tidak ada di disk'.format(hilang))
+    print('[url] {} URL -> {}'.format(len(semua), URL_CSV))
+    for label, baris in per_toko.items():
+        rinci = OrderedDict()
+        for b in baris:
+            rinci[b[2]] = rinci.get(b[2], 0) + 1
+        utama = sum(1 for b in baris if b[4] == 'utama')
+        print('   {:<15} {:>4} URL  ({} utama / {} varian)  {}'.format(
+            label, len(baris), utama, len(baris) - utama,
+            ' · '.join('{} {}'.format(v, k.lower()) for k, v in rinci.items())))
+    print('[url] per toko -> {}'.format(dir_toko))
+
+    besar = [b for b in semua if b[7] and b[7] > BATAS_FOTO]
+    if besar:
+        print('   ! {} foto melebihi 2 MB, akan ditolak Shopee:'.format(len(besar)))
+        for b in besar[:5]:
+            print('       {} ({:.2f} MB)'.format(b[3], b[7] / 1024 ** 2))
+    for rel in tak_dikenal[:5]:
+        print('   ! jenis produk tidak dikenali, dilewati: {}'.format(rel))
+    if len(tak_dikenal) > 5:
+        print('   ! ... total {} file dilewati'.format(len(tak_dikenal)))
 
 
 # --------------------------------------------------------------------------- excel
@@ -326,7 +404,8 @@ def susun_listing(cfg, data, toko, jenis, manifest):
     punya = manifest.get(toko['folder_foto'], {}).get(j['slug'], {})
 
     def url(kunci):
-        p = punya.get(kunci)
+        # kunci hasil pindai selalu huruf besar, samakan supaya "utama1" ikut cocok
+        p = punya.get(kunci.upper())
         return base + '/' + p if (base and p) else None
 
     hasil = []
@@ -418,7 +497,7 @@ def periksa(cfg, listings, wajib):
 
 def kumpulkan(cfg, data):
     """{nama_file_output: (path_template, [listing, ...])} untuk semua toko."""
-    manifest = baca_manifest()
+    manifest, _ = pindai_foto(cfg)
     if not cfg['foto'].get('base_url'):
         print('[info] foto.base_url belum diisi di config.json -> kolom foto dikosongkan')
 
@@ -459,12 +538,23 @@ def perintah_cek(cfg, data, diam=False):
 
 def perintah_build(cfg, data):
     paket = kumpulkan(cfg, data)
+    terkunci = []
     for berkas, (tpl, listings) in paket.items():
-        n = tulis_excel(cfg, os.path.join(AKAR, tpl), os.path.join(DIR_OUT, berkas), listings)
+        try:
+            n = tulis_excel(cfg, os.path.join(AKAR, tpl), os.path.join(DIR_OUT, berkas), listings)
+        except PermissionError:
+            terkunci.append(berkas)
+            print('[build] {:<58} DILEWATI - berkas sedang dibuka'.format(berkas))
+            continue
         berfoto = sum(1 for L in listings if L['utama'][0])
         print('[build] {:<58} {} listing / {} baris / {} berfoto'.format(
             berkas, len(listings), n, berfoto))
     print('[build] hasil di: {}'.format(DIR_OUT))
+    if terkunci:
+        print('   ! {} berkas tidak bisa ditimpa karena sedang dibuka di Excel.'.format(len(terkunci)))
+        print('     Tutup dulu berkas berikut lalu jalankan "build" lagi:')
+        for b in terkunci:
+            print('       - ' + b)
 
 
 def main():
