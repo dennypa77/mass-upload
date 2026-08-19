@@ -3,7 +3,9 @@
 
 Perintah:
     python tools/shopee_mass_upload.py impor <file>  -> ubah ekspor sheet SKU jadi data/sku.csv
-    python tools/shopee_mass_upload.py foto    -> salin & rename foto dari Drive
+    python tools/shopee_mass_upload.py unggah <folder> -> proses 1 folder produk:
+                                                deteksi PNG, salin, push, simpan URL ke database
+    python tools/shopee_mass_upload.py foto    -> salin & rename SEMUA foto dari Drive
     python tools/shopee_mass_upload.py url     -> daftar "file lokal -> URL" ke data/url_foto.csv
     python tools/shopee_mass_upload.py cek     -> laporan kelengkapan data & foto
     python tools/shopee_mass_upload.py build   -> hasilkan file Excel siap upload
@@ -32,6 +34,7 @@ URL_CSV = os.path.join(AKAR, 'data', 'url_foto.csv')
 DIR_FOTO = os.path.join(AKAR, 'foto-upload')
 DIR_OUT = os.path.join(AKAR, 'output')
 MANIFEST = os.path.join(DIR_FOTO, '_manifest.json')
+DB_PATH = os.path.join(AKAR, 'data', 'foto.db')
 
 # Saringan uji coba. Kalau salah satu diisi, tools hanya memproses yang cocok dan
 # hasilnya ditulis ke folder terpisah (output/uji, data/uji) supaya berkas asli aman.
@@ -301,7 +304,9 @@ def pindai_foto(cfg):
         foto-upload/toko1/JB-0000001.png             (langsung di folder toko)
         foto-upload/TOKO 3/apa saja/PB-0000001.png   (sub-folder bebas)
     Jenis produk diambil dari nama sub-folder; kalau tidak cocok, ditebak dari
-    prefix nama file (JB/PA/PB). Kembaliannya {toko: {slug: {kunci: path relatif}}}.
+    prefix nama file (JB/PA/PB). Kembaliannya {toko: {slug: {kunci: path}}},
+    dengan path relatif terhadap akar project (selalu diawali "foto-upload/")
+    sehingga langsung cocok dengan base_url yang menunjuk akar repo.
     """
     hasil, tak_dikenal = {}, []
     if not os.path.isdir(DIR_FOTO):
@@ -328,7 +333,7 @@ def pindai_foto(cfg):
                     continue
                 kunci = os.path.splitext(f)[0].upper()
                 slug = slug_folder or slug_dari_prefix.get(kunci.split('-')[0])
-                rel = os.path.relpath(os.path.join(dirpath, f), DIR_FOTO).replace(os.sep, '/')
+                rel = os.path.relpath(os.path.join(dirpath, f), AKAR).replace(os.sep, '/')
                 if not slug:
                     tak_dikenal.append(rel)
                     continue
@@ -386,7 +391,7 @@ def perintah_url(cfg, data=None):
             for kunci, rel in sorted(indeks[toko][slug].items()):
                 if not diizinkan(kunci):
                     continue
-                lokal = os.path.join(DIR_FOTO, rel.replace('/', os.sep))
+                lokal = os.path.join(AKAR, rel.replace('/', os.sep))
                 baris.append([label, toko, jenis_slug.get(slug, slug), kunci,
                               'utama' if '-UTAMA' in kunci.upper() else 'varian',
                               lokal, base + '/' + rel,
@@ -430,11 +435,10 @@ def perintah_url(cfg, data=None):
         print('       {}/  ({} file)'.format(f, n))
     if len(folder) > 8:
         print('       ... dan {} folder lain'.format(len(folder) - 8))
-    awalan = os.path.relpath(DIR_FOTO, AKAR)
     print('[url] perintah upload:')
     print('       cd "{}"'.format(AKAR))
     for f in folder[:4]:
-        print('       git add -f "{}"'.format(os.path.join(awalan, f.replace('/', os.sep))))
+        print('       git add -f "{}"'.format(f.replace('/', os.sep)))
     if len(folder) > 4:
         print('       (dan {} folder lainnya)'.format(len(folder) - 4))
     print('       git commit -m "foto uji coba" && git push')
@@ -478,18 +482,22 @@ def atribut_wajib(wb, kategori):
     return {}
 
 
-def susun_listing(cfg, data, toko, jenis, manifest):
+def susun_listing(cfg, data, toko, jenis, manifest, dari_db=None):
     """Bangun daftar listing untuk satu toko + satu jenis produk."""
     j = cfg['jenis'][jenis]
     profil = cfg['profil'][toko['profil']]
     opsi = profil['judul'][jenis]
     teks = profil['deskripsi'][jenis].replace('{SPEC}', j['spec']).replace('{TOKO}', toko['nama'])
     base = (cfg['foto'].get('base_url') or '').rstrip('/')
-    punya = manifest.get(toko['folder_foto'], {}).get(j['slug'], {})
+    db_toko = (dari_db or {}).get(toko['folder_foto'], {})
+    punya = (manifest or {}).get(toko['folder_foto'], {}).get(j['slug'], {})
 
     def url(kunci):
-        # kunci hasil pindai selalu huruf besar, samakan supaya "utama1" ikut cocok
-        p = punya.get(kunci.upper())
+        # kunci selalu huruf besar, samakan supaya "utama1" ikut cocok
+        kunci = kunci.upper()
+        if db_toko:
+            return db_toko.get(kunci)
+        p = punya.get(kunci)
         return base + '/' + p if (base and p) else None
 
     hasil = []
@@ -579,9 +587,32 @@ def periksa(cfg, listings, wajib):
     return pesan
 
 
+def peta_url_db():
+    """{toko: {KUNCI: url}} dari database foto. Kosong kalau database belum ada."""
+    if not os.path.exists(DB_PATH):
+        return {}
+    sys.path.insert(0, os.path.join(AKAR, 'tools'))
+    import gudang
+    db = gudang.buka(DB_PATH)
+    try:
+        return gudang.peta_url(db)
+    finally:
+        db.close()
+
+
 def kumpulkan(cfg, data):
-    """{nama_file_output: (path_template, [listing, ...])} untuk semua toko."""
-    manifest, _ = pindai_foto(cfg)
+    """{nama_file_output: (path_template, [listing, ...])} untuk semua toko.
+
+    URL foto diambil dari database (hasil perintah "unggah"). Kalau database
+    belum ada, jatuh ke cara lama: memindai foto-upload/ + base_url.
+    """
+    dari_db = peta_url_db()
+    if dari_db:
+        n = sum(len(v) for v in dari_db.values())
+        print('[info] URL foto diambil dari database: {} foto'.format(n))
+        manifest = None
+    else:
+        manifest, _ = pindai_foto(cfg)
     if not cfg['foto'].get('base_url'):
         print('[info] foto.base_url belum diisi di config.json -> kolom foto dikosongkan')
 
@@ -595,7 +626,7 @@ def kumpulkan(cfg, data):
                 print('[info] jenis "{}" tidak ada di config.json, dilewati'.format(jenis))
                 continue
             per_template.setdefault(cfg['jenis'][jenis]['template'], []).extend(
-                susun_listing(cfg, data, toko, jenis, manifest))
+                susun_listing(cfg, data, toko, jenis, manifest, dari_db))
         for nama_tpl, listings in per_template.items():
             berkas = '{} - {}.xlsx'.format(toko['nama'], nama_tpl.title())
             paket[berkas] = (cfg['template'][nama_tpl], listings)
@@ -645,8 +676,9 @@ def perintah_build(cfg, data):
 
 def main():
     p = argparse.ArgumentParser(description='Pembuat file Shopee Mass Upload')
-    p.add_argument('perintah', choices=['impor', 'foto', 'url', 'cek', 'build', 'semua'])
-    p.add_argument('sumber', nargs='?', help='untuk "impor": file ekspor sheet SKU (.xlsx/.csv)')
+    p.add_argument('perintah', choices=['impor', 'unggah', 'foto', 'url', 'cek', 'build', 'semua'])
+    p.add_argument('sumber', nargs='?', help='untuk "impor": berkas ekspor SKU; untuk "unggah": folder produk')
+    p.add_argument('--tanpa-push', action='store_true', help='unggah: siapkan saja, jangan push ke GitHub')
     p.add_argument('--toko', help='uji coba: batasi ke satu toko, mis. "toko1" atau "Hangs"')
     p.add_argument('--jenis', help='uji coba: batasi ke satu jenis, mis. "JIBBITZ"')
     p.add_argument('--seri', help='uji coba: batasi ke satu seri, mis. "CORTIS"')
@@ -661,6 +693,14 @@ def main():
         if not a.sumber:
             sys.exit('Contoh: python tools/shopee_mass_upload.py impor "SKU.xlsx"')
         perintah_impor(cfg, a.sumber)
+        return
+
+    if a.perintah == 'unggah':
+        if not a.sumber:
+            sys.exit('Contoh: python tools/shopee_mass_upload.py unggah '
+                     '"G:/My Drive/JIBBITZ/PRODUK 00001 - 00050"')
+        import unggah as modul_unggah
+        modul_unggah.proses(sys.modules[__name__], cfg, a.sumber, push=not a.tanpa_push)
         return
 
     data = baca_sku()

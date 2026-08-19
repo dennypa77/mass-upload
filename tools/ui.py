@@ -14,10 +14,14 @@ import shopee_mass_upload as inti
 
 LANGKAH = [
     ('1. Impor SKU',  'impor', 'Baca ekspor Google Sheet (.xlsx) menjadi data/sku.csv'),
-    ('2. Siapkan Foto', 'foto', 'Salin + rename foto dari Google Drive ke foto-upload/'),
-    ('3. Buat URL',   'url',   'Tulis pemetaan file lokal -> URL ke data/url_foto.csv'),
-    ('4. Cek',        'cek',   'Periksa kelengkapan data & foto sebelum upload'),
-    ('5. Buat Excel', 'build', 'Hasilkan file siap upload di output/'),
+    ('2. Proses Folder Foto', 'unggah',
+     'Pilih 1 folder produk -> deteksi PNG -> upload ke GitHub -> URL masuk database'),
+    ('3. Cek',        'cek',   'Periksa kelengkapan data & foto sebelum upload'),
+    ('4. Buat Excel', 'build', 'Hasilkan file siap upload di output/'),
+]
+LANJUTAN = [
+    ('Ekspor daftar URL', 'url', 'Tulis isi database ke data/url_foto.csv (per toko juga)'),
+    ('Sapu semua folder Drive', 'foto', 'Salin seluruh foto Drive sekaligus (tanpa upload)'),
 ]
 
 
@@ -103,8 +107,19 @@ class Aplikasi(tk.Tk):
                 row=i, column=1, sticky='w', padx=12)
             self.tombol.append(b)
 
+        for i, (judul, perintah, keterangan) in enumerate(LANJUTAN, start=len(LANGKAH)):
+            b = ttk.Button(grid, text=judul, width=16,
+                           command=lambda p=perintah: self.jalankan(p))
+            b.grid(row=i, column=0, sticky='w', pady=3)
+            ttk.Label(grid, text=keterangan, foreground='#888').grid(
+                row=i, column=1, sticky='w', padx=12)
+            self.tombol.append(b)
+
         bawah = ttk.Frame(aksi)
         bawah.pack(fill='x', padx=10, pady=(0, 10))
+        self.var_push = tk.BooleanVar(value=True)
+        ttk.Checkbutton(bawah, text='Upload ke GitHub saat proses folder',
+                        variable=self.var_push).pack(side='left', padx=(0, 12))
         b = ttk.Button(bawah, text='Jalankan Semua', command=lambda: self.jalankan('semua'))
         b.pack(side='left')
         self.tombol.append(b)
@@ -156,14 +171,22 @@ class Aplikasi(tk.Tk):
         rinci_toko = ' · '.join(
             '{}: {}'.format(t['nama'], sum(len(v) for v in indeks.get(t['folder_foto'], {}).values()))
             for t in cfg['toko'])
+        n_db = n_unggah = 0
+        if os.path.exists(inti.DB_PATH):
+            import gudang
+            db = gudang.buka(inti.DB_PATH)
+            n_db, n_unggah = gudang.jumlah(db)
+            db.close()
         n_out = len([f for f in os.listdir(inti.DIR_OUT)
-                     if f.endswith('.xlsx')]) if os.path.isdir(inti.DIR_OUT) else 0
+                     if f.endswith('.xlsx') and not f.startswith('~$')]) \
+            if os.path.isdir(inti.DIR_OUT) else 0
         self.lbl_status.config(text='\n'.join([
             'Data     : ' + teks_sku,
             'Toko     : ' + ', '.join(t['nama'] for t in cfg['toko']),
             'Foto     : {} file siap · URL {}'.format(
                 n_foto, 'aktif' if cfg['foto'].get('base_url') else 'belum diisi'),
             '           ' + (rinci_toko if n_foto else '(belum ada foto)'),
+            'Database : {} foto ber-URL · {} sudah di GitHub'.format(n_db, n_unggah),
             'Output   : {} file Excel'.format(n_out),
         ]))
 
@@ -198,6 +221,21 @@ class Aplikasi(tk.Tk):
                 filetypes=[('Excel / CSV', '*.xlsx *.xlsm *.csv'), ('Semua berkas', '*.*')])
             if not sumber:
                 return
+        elif perintah == 'unggah':
+            try:
+                awal = inti.baca_config()['foto'].get('root') or ''
+            except Exception:
+                awal = ''
+            sumber = filedialog.askdirectory(
+                title='Pilih folder produk (mis. PRODUK 00001 - 00050)',
+                initialdir=awal if os.path.isdir(awal) else None)
+            if not sumber:
+                return
+            if self.var_push.get() and not messagebox.askyesno(
+                    'Upload ke GitHub',
+                    'Foto di folder ini akan disalin, di-commit, dan di-push ke GitHub.\n\n'
+                    '{}\n\nLanjutkan?'.format(sumber)):
+                return
         inti.SARING.update({k: (v.get().strip() or None) for k, v in self.saring.items()})
         self.sibuk = True
         for b in self.tombol:
@@ -216,6 +254,9 @@ class Aplikasi(tk.Tk):
             cfg = inti.baca_config()
             if perintah == 'impor':
                 inti.perintah_impor(cfg, sumber)
+            elif perintah == 'unggah':
+                import unggah as modul
+                modul.proses(inti, cfg, sumber, push=self.var_push.get())
             elif perintah == 'url':
                 inti.perintah_url(cfg, inti.baca_sku())
             else:

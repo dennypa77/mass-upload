@@ -103,6 +103,65 @@ G:\My Drive\ (foto lokal) ──► foto ──► foto-upload/ ──► push k
    foto ditambahkan manual lewat Seller Centre).
 3. **`build`** — menghasilkan satu file Excel per toko per template kategori.
 
+## Alur utama: proses satu folder foto
+
+Ini cara yang dipakai sehari-hari. Satu folder produk diproses dari awal sampai URL-nya
+tersimpan, sekali jalan:
+
+```
+python tools/shopee_mass_upload.py unggah "G:/My Drive/JIBBITZ/PRODUK 00001 - 00050"
+```
+
+Di UI: tombol **2. Proses Folder Foto** → muncul pemilih folder (langsung terbuka di lokasi
+Drive sesuai `config.json` → `foto.root`).
+
+Yang dikerjakan berurutan:
+
+1. **Deteksi** — folder ditelusuri sampai sub-folder terdalam, semua PNG/JPG dikumpulkan
+2. **Kenali** — tiap foto ditentukan toko, jenis produk, seri, dan tipenya (varian / utama)
+3. **Salin & rename** — masuk ke `foto-upload/<toko>/<jenis>/`, foto >2 MB dikecilkan
+4. **Upload** — `git add` + `commit` + `push` ke GitHub, otomatis
+5. **Simpan URL** — ditulis ke database `data/foto.db`
+
+Folder yang dipilih boleh tingkat mana saja: folder seri (`PRODUK 00001 - 00050`), folder
+`FOTO PRODUK`, atau langsung satu folder toko. Tambahkan `--tanpa-push` (atau lepas centang
+di UI) kalau ingin menyiapkan saja tanpa mengupload.
+
+### Cara foto dikenali
+
+| Hal | Diambil dari |
+|---|---|
+| **Toko** | komponen path yang berpola `TOKO 1` / `toko_2` / `FOTO_3` |
+| **Jenis** | prefix nama file — `JB-` jibbitz, `PA-` pin akrilik, `PB-` pin button |
+| **Seri** | dicocokkan dari `data/sku.csv` lewat nomor SKU |
+| **Foto utama** | nama `foto1/2/3.png`; serinya ikut folder tempatnya berada |
+
+Foto utama di-rename jadi `JB-CORTIS-utama1.png` supaya unik antar seri. Foto varian
+namanya sudah SKU, jadi dibiarkan.
+
+## Database URL: `data/foto.db`
+
+SQLite, satu baris per foto per toko. Isinya menumpuk — folder yang diproses hari ini tidak
+menimpa yang kemarin, jadi bisa dicicil per folder.
+
+| Kolom | Isi |
+|---|---|
+| `toko` / `nama_toko` | `toko3` / `Hangs on You` |
+| `jenis` / `seri` | `JIBBITZ` / `CORTIS` |
+| `kunci` / `tipe` | `JB-0000001` varian, atau `JB-CORTIS-utama1` utama |
+| `sumber` | path asli di Google Drive |
+| `file_lokal` / `path_repo` | path setelah disalin / path di dalam repo |
+| `url` | alamat jsDelivr |
+| `ukuran` | byte, untuk memastikan di bawah 2 MB |
+| `diunggah` | `1` kalau sudah benar-benar ada di GitHub |
+| `waktu` | kapan diproses |
+
+**`build` mengambil URL dari database ini.** Kalau database belum ada, tools jatuh ke cara
+lama (memindai `foto-upload/` + `base_url`), jadi tetap jalan.
+
+Perintah `url` mengekspor isi database ke CSV (`data/url_foto.csv` + per toko) untuk dilihat
+di Excel. Database tetap sumber kebenarannya.
+
 ## Uji coba sebagian dulu
 
 Sebelum memproses semua 45 listing dan mengupload 868 MB foto, coba satu bagian kecil dulu.
