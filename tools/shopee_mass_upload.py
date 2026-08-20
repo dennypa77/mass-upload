@@ -100,6 +100,29 @@ def baca_sku():
     return data
 
 
+def saring_lingkup(data, lingkup):
+    """Batasi data SKU ke folder-folder yang dipilih pengguna.
+
+    lingkup = [{'jenis': 'JIBBITZ', 'dari': 1, 'sampai': 50}, ...]
+    Satu seri ikut terpilih kalau ada SKU-nya yang jatuh di salah satu rentang.
+    Daftar kosong berarti tanpa batasan (semua data dipakai).
+    """
+    if not lingkup:
+        return data
+    hasil = OrderedDict()
+    for jenis, seri_map in data.items():
+        rentang = [(L['dari'], L['sampai']) for L in lingkup if L.get('jenis') == jenis]
+        if not rentang:
+            continue
+        for seri, desain in seri_map.items():
+            for d in desain:
+                n = nomor_sku(d['sku'])
+                if n and any(a <= n <= b for a, b in rentang):
+                    hasil.setdefault(jenis, OrderedDict())[seri] = desain
+                    break
+    return hasil
+
+
 def dir_jenis(cfg, jenis):
     """Folder sumber di komputer ini untuk satu jenis produk.
 
@@ -673,12 +696,13 @@ def perintah_cek(cfg, data, diam=False):
     return total
 
 
-def perintah_build(cfg, data):
+def perintah_build(cfg, data, sub=None):
     paket = kumpulkan(cfg, data)
+    tujuan = os.path.join(dir_keluaran(), sub) if sub else dir_keluaran()
     terkunci = []
     for berkas, (tpl, listings) in paket.items():
         try:
-            n = tulis_excel(cfg, os.path.join(AKAR, tpl), os.path.join(dir_keluaran(), berkas), listings)
+            n = tulis_excel(cfg, os.path.join(AKAR, tpl), os.path.join(tujuan, berkas), listings)
         except PermissionError:
             terkunci.append(berkas)
             print('[build] {:<58} DILEWATI - berkas sedang dibuka'.format(berkas))
@@ -686,7 +710,7 @@ def perintah_build(cfg, data):
         berfoto = sum(1 for L in listings if L['utama'][0])
         print('[build] {:<58} {} listing / {} baris / {} berfoto'.format(
             berkas, len(listings), n, berfoto))
-    print('[build] hasil di: {}'.format(dir_keluaran()))
+    print('[build] hasil di: {}'.format(tujuan))
     if terkunci:
         print('   ! {} berkas tidak bisa ditimpa karena sedang dibuka di Excel.'.format(len(terkunci)))
         print('     Tutup dulu berkas berikut lalu jalankan "build" lagi:')

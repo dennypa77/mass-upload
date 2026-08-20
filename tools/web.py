@@ -177,9 +177,11 @@ def status_folder(cfg, jenis, path, dari, sampai, segar=False):
     return hasil
 
 
-def laporan_cek(cfg):
+def laporan_cek(cfg, lingkup=None):
     """Semua yang dibutuhkan untuk menghasilkan Excel, per berkas keluaran."""
-    data = inti.baca_sku()
+    data = inti.saring_lingkup(inti.baca_sku(), lingkup or [])
+    if not data:
+        return []
     paket = inti.kumpulkan(cfg, data)
     wajib = {}
     for jenis, j in cfg['jenis'].items():
@@ -190,14 +192,29 @@ def laporan_cek(cfg):
     for berkas, (_, listings) in paket.items():
         rinci = []
         for L in listings:
+            j = cfg['jenis'][L['jenis']]
+            n_foto_varian = sum(1 for x in L['per_varian'] if x)
             rinci.append({
                 'judul': L['judul'],
                 'jenis': L['jenis'],
                 'varian': len(L['desain']),
                 'foto': bool(L['utama'][0]),
+                'foto_utama_n': sum(1 for x in L['utama'] if x),
                 'foto_varian': bool(L['per_varian'][0]),
+                'foto_varian_n': n_foto_varian,
+                'sampul': L['utama'][0],
                 'panjang_judul': len(L['judul']),
                 'panjang_deskripsi': len(L['deskripsi']),
+                'deskripsi': L['deskripsi'],
+                'harga': round(j['harga_paket'] / j['min_order']),
+                'harga_paket': j['harga_paket'],
+                'min_order': j['min_order'],
+                'berat': j['berat_gram'],
+                'stok': j['stok'],
+                'kategori': j['kategori'],
+                'sku_induk': L['kode_induk'],
+                'contoh_varian': [d['varian'] for d in L['desain'][:3]],
+                'contoh_sku': [d['sku'] for d in L['desain'][:3]],
             })
         keluar.append({'berkas': berkas, 'listing': rinci,
                        'peringatan': inti.periksa(cfg, listings, wajib)})
@@ -289,11 +306,18 @@ class Penangan(BaseHTTPRequestHandler):
             if self.path == '/api/perintah':
                 nama = badan['perintah']
 
+                lingkup = badan.get('folders') or []
+
                 def kerja():
+                    if nama == 'build':
+                        data = inti.saring_lingkup(inti.baca_sku(), lingkup)
+                        if not data:
+                            print('[build] tidak ada SKU pada folder yang dipilih')
+                            return
+                        inti.perintah_build(cfg, data, sub='pilihan' if lingkup else None)
+                        return
                     if nama == 'cek':
                         inti.perintah_cek(cfg, inti.baca_sku())
-                    elif nama == 'build':
-                        inti.perintah_build(cfg, inti.baca_sku())
                     elif nama == 'url':
                         inti.perintah_url(cfg, inti.baca_sku())
                     elif nama == 'impor':
@@ -301,10 +325,24 @@ class Penangan(BaseHTTPRequestHandler):
                         SINGGAHAN.clear()
                 return self._kirim({'mulai': di_latar(nama, kerja)})
             if self.path == '/api/cek':
-                return self._kirim({'berkas': laporan_cek(cfg)})
+                return self._kirim({'berkas': laporan_cek(cfg, badan.get('folders'))})
+            if self.path == '/api/lingkup':
+                # folder terpilih -> seri apa saja yang tercakup
+                data = inti.saring_lingkup(inti.baca_sku(), badan.get('folders') or [])
+                seri = [{'jenis': j, 'seri': s, 'sku': len(d)}
+                        for j, m in data.items() for s, d in m.items()]
+                return self._kirim({'seri': seri,
+                                    'sku': sum(x['sku'] for x in seri)})
             if self.path == '/api/pilih':
                 jalur = dialog_folder(badan.get('awal') or '')
                 return self._kirim({'path': jalur})
+            if self.path == '/api/buka':
+                peta = {'output': inti.DIR_OUT, 'foto': inti.DIR_FOTO,
+                        'data': os.path.join(inti.AKAR, 'data')}
+                folder = peta.get(badan.get('apa'), inti.DIR_OUT)
+                if os.path.isdir(folder):
+                    subprocess.Popen(['explorer', os.path.normpath(folder)])
+                return self._kirim({'ok': os.path.isdir(folder)})
             if self.path == '/api/pilih_berkas':
                 return self._kirim({'path': dialog_berkas()})
             if self.path == '/api/sumber':
