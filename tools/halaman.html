@@ -52,6 +52,11 @@ nav.tab button{border:none;border-bottom:2px solid transparent;border-radius:0;
 background:none;padding:11px 16px;color:var(--redup)}
 nav.tab button.aktif{color:var(--teks);border-bottom-color:var(--biru);background:none}
 section.lembar{display:none;padding:14px 20px}
+#bilah{padding:9px 20px;background:#20242b;border-bottom:1px solid var(--garis);
+font-size:12.5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#bilah .kepingan{background:#2d3a4d;border:1px solid #3c5a80;border-radius:10px;
+padding:1px 9px;font-size:11px}
+td.pilihkotak{width:34px;text-align:center}
 section.lembar.aktif{display:block}
 
 /* keterangan */
@@ -77,13 +82,20 @@ tr.rinci li{margin:2px 0}
 </header>
 
 <nav class="tab">
-  <button class="aktif" data-lembar="folder">Folder Produk</button>
-  <button data-lembar="sumber">Sumber Data &amp; SKU</button>
-  <button data-lembar="siap">Kesiapan Excel</button>
+  <button class="aktif" data-lembar="sumber">Sumber Data</button>
+  <button data-lembar="folder">1. Folder Produk</button>
+  <button data-lembar="siap">2. Cek Kesiapan</button>
+  <button data-lembar="pratinjau">3. Pratinjau</button>
+  <button data-lembar="ekspor">4. Export Mass Upload</button>
 </nav>
 
+<div id="bilah">
+  <b>Folder diproses:</b> <span id="isiPilihan" class="redup">belum ada — pilih di tab “1. Folder Produk”</span>
+  <button onclick="kosongkanPilihan()" style="padding:3px 10px;font-size:11px">Kosongkan</button>
+</div>
+
 <!-- ------------------------------------------------------------ FOLDER -->
-<section class="lembar aktif" id="lembar-folder">
+<section class="lembar" id="lembar-folder">
   <div style="display:grid;grid-template-columns:minmax(520px,2fr) 1fr;gap:14px">
     <div class="kartu">
       <h2>Folder produk</h2>
@@ -101,6 +113,7 @@ tr.rinci li{margin:2px 0}
       <div style="max-height:520px;overflow:auto">
         <table id="pohon">
           <thead><tr>
+            <th class="pilihkotak" title="Centang folder yang mau diproses. Pilihan terbawa ke tab berikutnya"><input type="checkbox" id="pilihSemua" onclick="centangTampak(this.checked)"></th>
             <th title="Nama folder di komputer sumber, beserta jenis produknya">Folder</th>
             <th title="Jumlah berkas gambar (PNG/JPG) di dalam folder ini, seluruh toko dijumlahkan">Foto di sumber</th>
             <th title="Berapa SKU pada rentang nomor folder ini yang sudah terdaftar di data/sku.csv">SKU terdaftar</th>
@@ -138,7 +151,7 @@ tr.rinci li{margin:2px 0}
 </section>
 
 <!-- ------------------------------------------------------------ SUMBER -->
-<section class="lembar" id="lembar-sumber">
+<section class="lembar aktif" id="lembar-sumber">
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
     <div class="kartu">
       <h2>Folder sumber tiap jenis produk</h2>
@@ -202,32 +215,70 @@ tr.rinci li{margin:2px 0}
 <!-- ------------------------------------------------------------ KESIAPAN -->
 <section class="lembar" id="lembar-siap">
   <div class="kartu">
-    <h2>Kesiapan berkas Excel</h2>
+    <h2>2. Cek kesiapan</h2>
     <div class="isi">
       <div class="baris">
         <button class="utama" onclick="muatCek()">Periksa sekarang</button>
-        <button onclick="perintah('build')">Buat Excel</button>
-        <button onclick="perintah('url')">Ekspor daftar URL</button>
-        <span class="kecil redup">klik baris untuk melihat rincian peringatannya</span>
+        <span class="kecil redup">memeriksa hanya folder yang dipilih di langkah 1;
+          kalau belum ada yang dipilih, seluruh data diperiksa</span>
       </div>
     </div>
     <div id="cek" class="isi" style="padding-top:0">
       <span class="redup">Tekan “Periksa sekarang”.</span>
     </div>
     <div class="isi arti">
-      <b>Jenis peringatan yang mungkin muncul</b>
+      <b>Yang diperiksa tiap listing</b>
       <dl>
-        <dt>BELUM ADA FOTO</dt><dd>listing itu belum punya foto sampul — fotonya belum diproses, atau sudah disalin tapi belum di-push ke GitHub</dd>
-        <dt>judul N karakter</dt><dd>judul di luar batas Shopee 5–255 karakter</dd>
-        <dt>deskripsi N karakter</dt><dd>deskripsi di luar batas 20–3.000 karakter</dd>
-        <dt>nama varian &gt; 20 karakter</dt><dd>nama varian melebihi batas Shopee</dd>
-        <dt>ada SKU kembar</dt><dd>dua varian memakai kode SKU yang sama dalam satu listing</dd>
-        <dt>ada nama varian kembar</dt><dd>dua varian bernama sama dalam satu listing</dd>
-        <dt>atribut wajib belum diisi</dt><dd>kategori Shopee mewajibkan atribut itu, tapi belum ada di <code>config.json</code></dd>
+        <dt>Judul</dt><dd>ada dan panjangnya 5–255 karakter</dd>
+        <dt>Deskripsi</dt><dd>ada dan panjangnya 20–3.000 karakter</dd>
+        <dt>Foto utama</dt><dd>foto sampul + foto produk (maks. 3) sudah punya URL yang aktif di GitHub</dd>
+        <dt>Foto varian</dt><dd>ditulis <i>terisi / jumlah varian</i>. Shopee mewajibkan semua varian punya foto, atau tidak sama sekali</dd>
+        <dt>Harga</dt><dd>harga per pcs = harga paket ÷ min. order, harus Rp99–Rp1 miliar</dd>
+        <dt>Varian</dt><dd>jumlah varian, dan tidak boleh ada SKU atau nama varian yang kembar</dd>
       </dl>
-      <div style="margin-top:8px">Kolom <b>Berfoto</b> ditulis <i>berfoto / total listing</i>.
-      Berkas boleh saja tetap diupload walau ada peringatan foto — produk masuk sebagai draf,
-      lalu fotonya ditambahkan di Seller Centre.</div>
+      <div style="margin-top:8px">Klik baris berkas untuk melihat daftar peringatan lengkapnya.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------ PRATINJAU -->
+<section class="lembar" id="lembar-pratinjau">
+  <div class="kartu">
+    <h2>3. Pratinjau listing</h2>
+    <div class="isi">
+      <div class="baris">
+        <button class="utama" onclick="muatPratinjau()">Muat pratinjau</button>
+        <span class="kecil redup">tampilan isi tiap listing sebelum ditulis ke Excel</span>
+      </div>
+    </div>
+    <div id="pratinjau" class="isi" style="padding-top:0">
+      <span class="redup">Tekan “Muat pratinjau”.</span>
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------ EKSPOR -->
+<section class="lembar" id="lembar-ekspor">
+  <div class="kartu">
+    <h2>4. Export mass upload Shopee</h2>
+    <div class="isi">
+      <div id="ringkasEkspor" class="kecil"></div>
+      <div class="baris" style="margin-top:12px">
+        <button class="utama" onclick="perintah('build')">Buat berkas Excel</button>
+        <button onclick="perintah('url')">Ekspor daftar URL</button>
+        <button onclick="bukaFolder('output')">Buka folder hasil</button>
+      </div>
+      <div class="arti">
+        Satu berkas Excel dihasilkan per toko per template kategori. Kalau ada folder yang
+        dipilih di langkah 1, hasilnya ditulis ke <code>output/pilihan/</code> supaya tidak
+        menimpa hasil lengkap di <code>output/</code>.
+        <br><br>Di Seller Centre Shopee: <b>Produk → Mass Upload → Upload berkas</b>, lalu
+        pilih berkas milik toko yang bersangkutan. Ingat tiap berkas hanya untuk satu toko
+        dan satu cabang kategori.
+        <br><br><b>Ekspor daftar URL</b> menulis pemetaan foto → alamat publik ke
+        <code>data/url_foto.csv</code> dan satu berkas per toko di <code>data/url/</code>,
+        berguna untuk mengecek foto yang tidak muncul.
+      </div>
     </div>
   </div>
 </section>
@@ -246,6 +297,45 @@ tr.rinci li{margin:2px 0}
 
 <script>
 let sejak=0, pilih=null, pengamat=null;
+let dipilih=new Map();   // path -> folder ; pilihan ini dibawa ke semua langkah
+
+function daftarLingkup(){
+  return [...dipilih.values()].map(f=>({jenis:f.jenis,dari:f.dari,sampai:f.sampai}));
+}
+function gambarBilah(){
+  const n=dipilih.size;
+  if(!n){$('#isiPilihan').innerHTML='<span class="redup">belum ada — pilih di tab '
+    +'\u201c1. Folder Produk\u201d. Tanpa pilihan, seluruh data yang diproses.</span>';}
+  else{
+    const isi=[...dipilih.values()].slice(0,6).map(f=>
+      `<span class="kepingan">${f.jenis} \u00b7 ${f.nama.replace('PRODUK ','')}</span>`).join(' ');
+    $('#isiPilihan').innerHTML=isi+(n>6?` <span class="redup">+${n-6} lagi</span>`:'')
+      +` <span class="redup">(${n} folder)</span>`;
+  }
+  const r=$('#ringkasEkspor');
+  if(r)r.innerHTML=n
+    ? `Akan diekspor: <b>${n} folder terpilih</b>. Hasil ditulis ke <code>output/pilihan/</code>.`
+    : 'Tidak ada folder dipilih \u2014 <b>seluruh data</b> diekspor ke <code>output/</code>.';
+}
+function kosongkanPilihan(){
+  dipilih.clear();
+  document.querySelectorAll('.centangFolder').forEach(c=>c.checked=false);
+  gambarBilah();
+}
+function ubahCentang(kotak,tr){
+  const d=tr.dataset;
+  if(kotak.checked)dipilih.set(d.path,
+      {jenis:d.jenis,nama:d.nama,dari:+d.dari,sampai:+d.sampai,path:d.path});
+  else dipilih.delete(d.path);
+  gambarBilah();
+}
+function centangTampak(nyala){
+  document.querySelectorAll('tr.folder').forEach(tr=>{
+    if(tr.style.display==='none')return;
+    const c=tr.querySelector('.centangFolder');
+    if(c&&c.checked!==nyala){c.checked=nyala;ubahCentang(c,tr);}
+  });
+}
 const $=s=>document.querySelector(s);
 const api=(u,d)=>fetch(u,d?{method:'POST',body:JSON.stringify(d)}:undefined).then(r=>r.json());
 
@@ -340,7 +430,7 @@ function muatPohon(){
     const tb=$('#pohon tbody'); tb.innerHTML=''; let total=0;
     d.jenis.forEach((j,idx)=>{
       const th=document.createElement('tr'); th.className='jenis';
-      th.innerHTML=`<td colspan="5">
+      th.innerHTML=`<td colspan="6">
         <span class="panah">▾</span><span class="ikon">🗂️</span><b>${j.jenis}</b>
         <span class="redup" style="font-weight:400">— ${j.folder.length} folder</span>
         ${j.ada?'':'<span class="tanda t-tanpasku">folder sumber tidak ditemukan</span>'}
@@ -356,12 +446,16 @@ function muatPohon(){
         const r=document.createElement('tr'); r.className='folder';
         Object.assign(r.dataset,{jenis:j.jenis,path:f.path,dari:f.dari,sampai:f.sampai,
                                  nama:f.nama});
-        r.innerHTML=`<td><span class="ikon" style="margin-left:16px">📂</span>${f.nama}
+        r.innerHTML=`<td class="pilihkotak"><input type="checkbox" class="centangFolder"></td>
+          <td><span class="ikon" style="margin-left:16px">📂</span>${f.nama}
             <span class="redup kecil">· ${j.jenis}</span></td>
           <td class="angka" data-k="foto">…</td>
           <td class="angka" data-k="sku"></td>
           <td class="angka" data-k="git"></td>
           <td data-k="tanda"></td>`;
+        const kotak=r.querySelector('.centangFolder');
+        kotak.checked=dipilih.has(f.path);
+        kotak.onclick=e=>{e.stopPropagation();ubahCentang(kotak,r);};
         r.onclick=()=>pilihFolder(r);
         tb.appendChild(r); amati(r);
       });
@@ -452,12 +546,15 @@ function proses(){
 }
 
 /* ---------------------------------------------------------------- kesiapan */
-function perintah(n){api('/api/perintah',{perintah:n}).then(r=>{
+function perintah(n){api('/api/perintah',{perintah:n,folders:daftarLingkup()}).then(r=>{
   if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');});}
 
 function muatCek(){
   $('#cek').innerHTML='<span class="redup">memeriksa…</span>';
-  api('/api/cek',{}).then(d=>{
+  api('/api/cek',{folders:daftarLingkup()}).then(d=>{
+    if(!d.berkas.length){$('#cek').innerHTML='<span style="color:var(--merah)">'
+      +'Tidak ada SKU pada folder yang dipilih. Impor SKU dulu, atau kosongkan pilihan.'
+      +'</span>';return;}
     let h='<table><thead><tr><th title="Berkas Excel yang akan dihasilkan">Berkas</th>'
       +'<th title="Jumlah listing (produk) di dalam berkas itu">Listing</th>'
       +'<th title="Berapa listing yang sudah punya foto sampul">Berfoto</th>'
@@ -473,12 +570,76 @@ function muatCek(){
         <td class="angka">${varian}</td>
         <td><span class="tanda ${w?'t-baru':'t-siap'}">${w?w+' peringatan':'siap'}</span></td></tr>
         <tr class="rinci" id="rinci${i}" style="display:none"><td colspan="5">
-        ${w?'<ul>'+b.peringatan.map(p=>'<li>'+p+'</li>').join('')+'</ul>'
-           :'Tidak ada masalah pada berkas ini.'}</td></tr>`;
+        ${tabelListing(b.listing)}
+        ${w?'<b>Peringatan</b><ul>'+b.peringatan.map(p=>'<li>'+p+'</li>').join('')+'</ul>'
+           :'<div style="color:var(--hijau)">Tidak ada masalah pada berkas ini.</div>'}
+        </td></tr>`;
     });
     $('#cek').innerHTML=h+'</tbody></table>';
   }).catch(()=>$('#cek').innerHTML='<span style="color:var(--merah)">gagal memeriksa</span>');
 }
+function ok(baik){
+  return baik?'<span style="color:var(--hijau)">ok</span>'
+             :'<span style="color:var(--merah)">belum</span>';
+}
+
+function tabelListing(daftar){
+  let h='<table style="margin:4px 0 10px"><thead><tr><th>Listing</th><th>Judul</th>'
+   +'<th>Deskripsi</th><th>Foto utama</th><th>Foto varian</th><th>Harga/pcs</th>'
+   +'<th>Varian</th></tr></thead><tbody>';
+  daftar.forEach(l=>{
+    const judulOk=l.panjang_judul>=5&&l.panjang_judul<=255;
+    const deskOk=l.panjang_deskripsi>=20&&l.panjang_deskripsi<=3000;
+    const hargaOk=l.harga>=99&&l.harga<=1000000000;
+    h+=`<tr><td>${l.judul.slice(0,56)}…</td>
+      <td>${ok(judulOk)} <span class="redup">${l.panjang_judul}</span></td>
+      <td>${ok(deskOk)} <span class="redup">${l.panjang_deskripsi}</span></td>
+      <td>${ok(l.foto)} <span class="redup">${l.foto_utama_n}/3</span></td>
+      <td>${ok(l.foto_varian_n===l.varian)} <span class="redup">${l.foto_varian_n}/${l.varian}</span></td>
+      <td>${ok(hargaOk)} <span class="redup">Rp${l.harga.toLocaleString('id')}</span></td>
+      <td class="angka">${l.varian}</td></tr>`;
+  });
+  return h+'</tbody></table>';
+}
+
+function muatPratinjau(){
+  $('#pratinjau').innerHTML='<span class="redup">memuat…</span>';
+  api('/api/cek',{folders:daftarLingkup()}).then(d=>{
+    if(!d.berkas.length){$('#pratinjau').innerHTML='<span style="color:var(--merah)">'
+      +'Tidak ada SKU pada folder yang dipilih.</span>';return;}
+    let h='';
+    d.berkas.forEach(b=>{
+      h+=`<h3 style="font-size:13px;margin:14px 0 6px">${b.berkas.replace('.xlsx','')}</h3>`;
+      b.listing.forEach(l=>{
+        h+=`<div style="display:flex;gap:12px;padding:10px;border:1px solid var(--garis);
+             border-radius:8px;margin-bottom:8px;background:#1f2228">
+          <div style="width:104px;height:104px;flex:none;background:#15171a;border-radius:6px;
+               display:flex;align-items:center;justify-content:center;overflow:hidden">
+            ${l.sampul?`<img src="${l.sampul}" style="max-width:100%;max-height:100%">`
+                      :'<span class="redup kecil">tanpa foto</span>'}</div>
+          <div style="flex:1;min-width:0">
+            <div><b>${l.judul}</b></div>
+            <div class="kecil redup" style="margin:4px 0">
+              ${l.kategori.split('/').slice(-1)[0]} \u00b7
+              Rp${l.harga.toLocaleString('id')}/pcs \u00b7
+              min ${l.min_order} pcs (Rp${l.harga_paket.toLocaleString('id')}) \u00b7
+              ${l.berat} g \u00b7 stok ${l.stok.toLocaleString('id')} \u00b7
+              ${l.varian} varian \u00b7 SKU induk ${l.sku_induk}</div>
+            <div class="kecil redup">varian: ${l.contoh_varian.join(', ')}\u2026 \u00b7
+              SKU: ${l.contoh_sku.join(', ')}\u2026</div>
+            <details style="margin-top:6px"><summary class="kecil redup"
+              style="cursor:pointer">deskripsi (${l.panjang_deskripsi} karakter)</summary>
+              <div class="kecil" style="white-space:pre-wrap;margin-top:6px;color:#c9ccd1"
+                >${l.deskripsi.replace(/[<>]/g,'')}</div></details>
+          </div></div>`;
+      });
+    });
+    $('#pratinjau').innerHTML=h;
+  });
+}
+
+function bukaFolder(n){api('/api/buka',{apa:n});}
+
 function bukaRinci(i){
   const el=$('#rinci'+i);
   el.style.display=el.style.display==='none'?'':'none';
@@ -500,10 +661,10 @@ setInterval(()=>{
     $('#tahap').textContent=d.sibuk
       ? `— ${d.sibuk}${d.tahap?': '+d.tahap+' '+d.n+'/'+d.total_maju:''}` : '';
     $('#barKerja').style.width=(d.sibuk&&d.total_maju?d.n/d.total_maju*100:0)+'%';
-    if(!d.sibuk&&window._tadiSibuk){muatStatus();muatCek();}
+    if(!d.sibuk&&window._tadiSibuk){muatStatus();}
     window._tadiSibuk=!!d.sibuk;
   }).catch(()=>{});
 },700);
 
-muatStatus(); muatPohon();
+muatStatus(); muatPohon(); gambarBilah();
 </script></body></html>

@@ -37,15 +37,33 @@ Kalau dikosongkan, tools kembali memakai cara lama: `foto.root` + `folder_drive`
 
 ### Penjelajah folder
 
-Tampilan web punya tiga tab:
+Tampilan web disusun berurutan seperti langkah kerja:
 
 | Tab | Isi |
 |---|---|
-| **Folder Produk** | penjelajah folder + panel folder terpilih |
-| **Sumber Data & SKU** | folder sumber tiap jenis, impor SKU, alamat dasar foto |
-| **Kesiapan Excel** | ringkasan tiap berkas keluaran + rincian peringatannya |
+| **Sumber Data** | folder sumber tiap jenis produk, impor SKU, alamat dasar foto |
+| **1. Folder Produk** | penjelajah folder — centang folder yang mau dikerjakan |
+| **2. Cek Kesiapan** | judul, deskripsi, foto utama, foto varian, harga, varian — per listing |
+| **3. Pratinjau** | tampilan tiap listing lengkap dengan gambar sampulnya |
+| **4. Export Mass Upload** | menghasilkan berkas Excel |
 
-Log ada di bawah, tingginya bisa ditarik sendiri.
+Di bawah deretan tab ada **bilah folder terpilih** yang selalu terlihat, jadi di langkah mana
+pun jelas folder apa yang sedang dikerjakan.
+
+### Pilihan folder terbawa sampai akhir
+
+Di tab **1. Folder Produk** tiap baris punya kotak centang, boleh pilih lebih dari satu
+folder (ada juga centang "pilih semua yang tampil", yang menghormati saringan). Pilihan itu
+dipakai oleh tab 2, 3, dan 4:
+
+- **Cek Kesiapan** hanya memeriksa listing dari folder terpilih
+- **Pratinjau** hanya menampilkan listing itu
+- **Export** hanya menulis berkas untuk listing itu, ke `output/pilihan/` supaya hasil
+  lengkap di `output/` tidak tertimpa
+
+Kalau tidak ada yang dicentang, ketiganya bekerja atas **seluruh data**.
+
+Log ada di bawah semua tab, tingginya bisa ditarik sendiri.
 
 ### Kolom pada penjelajah folder
 

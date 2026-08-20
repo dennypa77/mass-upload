@@ -12,3 +12,4 @@ data/*.bak
 data/uji/
 output/uji/
 data/cache_folder.json
+output/pilihan/
