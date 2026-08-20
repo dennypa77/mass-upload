@@ -30,7 +30,8 @@
         "100037": "Indonesia",
         "101219": "Ya"
       },
-      "spec": "Bahan: Akrilik\nKetebalan: 2 mm\nFinishing: Cetak UV, permukaan glossy\nPemasangan: Karet kancing jibbitz, pasang di lubang sandal/clog\nMin. order: 3 pcs (boleh beda desain)"
+      "spec": "Bahan: Akrilik\nKetebalan: 2 mm\nFinishing: Cetak UV, permukaan glossy\nPemasangan: Karet kancing jibbitz, pasang di lubang sandal/clog\nMin. order: 3 pcs (boleh beda desain)",
+      "path_drive": null
     },
     "PIN AKRILIK": {
       "prefix_sku": "PA",
@@ -48,7 +49,8 @@
         "100134": "Akrilik",
         "101219": "Ya"
       },
-      "spec": "Bahan: Akrilik\nUkuran: +/- 2 x 2,5 cm\nKetebalan: 2 mm\nFinishing: Cetak UV, permukaan glossy\nPemasangan: Jarum peniti (bros)\nMin. order: 4 pcs (boleh beda desain)"
+      "spec": "Bahan: Akrilik\nUkuran: +/- 2 x 2,5 cm\nKetebalan: 2 mm\nFinishing: Cetak UV, permukaan glossy\nPemasangan: Jarum peniti (bros)\nMin. order: 4 pcs (boleh beda desain)",
+      "path_drive": null
     },
     "PIN BUTTON": {
       "prefix_sku": "PB",
@@ -66,7 +68,8 @@
         "100134": "Logam",
         "101219": "Ya"
       },
-      "spec": "Bahan: Aluminium (kaleng) + lapis mika\nUkuran: 44 mm (4,4 cm)\nKetebalan: 4 mm\nFinishing: Print + lapisan mika\nPemasangan: Jarum peniti (bros)\nMin. order: 4 pcs (boleh beda desain)"
+      "spec": "Bahan: Aluminium (kaleng) + lapis mika\nUkuran: 44 mm (4,4 cm)\nKetebalan: 4 mm\nFinishing: Print + lapisan mika\nPemasangan: Jarum peniti (bros)\nMin. order: 4 pcs (boleh beda desain)",
+      "path_drive": null
     }
   },
   "toko": [

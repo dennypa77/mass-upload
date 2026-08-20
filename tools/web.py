@@ -12,7 +12,7 @@ Isinya:
   - tombol proses per folder, dan langkah lain (impor, cek, build, ekspor URL)
   - log berjalan
 """
-import json, os, queue, re, sys, threading, traceback, webbrowser
+import json, os, re, subprocess, sys, threading, traceback, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -98,7 +98,7 @@ def pohon(cfg):
     """Daftar folder produk per jenis, dibaca dari Google Drive. Cepat — hanya nama folder."""
     hasil = []
     for jenis, j in cfg['jenis'].items():
-        akar = os.path.join(cfg['foto']['root'], j['folder_drive'])
+        akar = inti.dir_jenis(cfg, jenis)
         anak = []
         if os.path.isdir(akar):
             for nama in sorted(os.listdir(akar)):
@@ -107,6 +107,7 @@ def pohon(cfg):
                     anak.append({'nama': nama, 'path': os.path.join(akar, nama),
                                  'dari': rentang[0], 'sampai': rentang[1]})
         hasil.append({'jenis': jenis, 'prefix': j['prefix_sku'], 'akar': akar,
+                      'khusus': bool((j.get('path_drive') or '').strip()),
                       'ada': os.path.isdir(akar), 'folder': anak})
     return hasil
 
@@ -203,6 +204,14 @@ def laporan_cek(cfg):
     return keluar
 
 
+def dialog_folder(awal=''):
+    """Buka dialog pilih folder Windows (lewat tools/pilih_folder.py) dan kembalikan path."""
+    skrip = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pilih_folder.py')
+    hasil = subprocess.run([sys.executable, skrip, awal or ''],
+                           capture_output=True, text=True, timeout=300)
+    return (hasil.stdout or '').strip()
+
+
 # --------------------------------------------------------------------------- server
 class Penangan(BaseHTTPRequestHandler):
     def log_message(self, *a):
@@ -285,6 +294,26 @@ class Penangan(BaseHTTPRequestHandler):
                 return self._kirim({'mulai': di_latar(nama, kerja)})
             if self.path == '/api/cek':
                 return self._kirim({'berkas': laporan_cek(cfg)})
+            if self.path == '/api/pilih':
+                jalur = dialog_folder(badan.get('awal') or '')
+                return self._kirim({'path': jalur})
+            if self.path == '/api/sumber':
+                # simpan folder sumber tiap jenis produk
+                for jenis, jalur in (badan.get('jenis') or {}).items():
+                    if jenis in cfg['jenis']:
+                        cfg['jenis'][jenis]['path_drive'] = (jalur or '').strip() or None
+                if badan.get('root') is not None:
+                    cfg['foto']['root'] = (badan['root'] or '').strip() or None
+                with open(inti.CONFIG, 'w', encoding='utf-8') as f:
+                    json.dump(cfg, f, ensure_ascii=False, indent=2)
+                SINGGAHAN.clear()
+                simpan_cache()
+                catat('[ui] folder sumber disimpan')
+                for jenis in cfg['jenis']:
+                    d = inti.dir_jenis(cfg, jenis)
+                    catat('   {:<12} {}  {}'.format(
+                        jenis, d, '' if os.path.isdir(d) else '(tidak ditemukan)'))
+                return self._kirim({'ok': True})
             if self.path == '/api/config':
                 cfg['foto']['base_url'] = (badan.get('base_url') or '').strip().rstrip('/') or None
                 with open(inti.CONFIG, 'w', encoding='utf-8') as f:
@@ -313,7 +342,10 @@ class Penangan(BaseHTTPRequestHandler):
         n_out = len([f for f in os.listdir(inti.DIR_OUT)
                      if f.endswith('.xlsx') and not f.startswith('~$')]) \
             if os.path.isdir(inti.DIR_OUT) else 0
-        return {'akar': inti.AKAR, 'root_drive': cfg['foto'].get('root'),
+        sumber = [{'jenis': j, 'path': inti.dir_jenis(cfg, j),
+                   'khusus': bool((cfg['jenis'][j].get('path_drive') or '').strip()),
+                   'ada': os.path.isdir(inti.dir_jenis(cfg, j))} for j in cfg['jenis']]
+        return {'akar': inti.AKAR, 'root_drive': cfg['foto'].get('root'), 'sumber': sumber,
                 'base_url': cfg['foto'].get('base_url') or '',
                 'toko': cfg['toko'], 'sku': sku, 'db': n_db, 'unggah': n_unggah,
                 'ringkasan': rinci, 'output': n_out}
@@ -354,6 +386,7 @@ tr.folder:hover{background:#2b2f36}
 tr.folder.pilih{background:#2d3a4d;outline:1px solid var(--biru)}
 .jenis td{background:#20232700;color:var(--biru);font-weight:600;padding-top:12px}
 .ikon{margin-right:7px}
+.panah{display:inline-block;width:14px;color:var(--redup)}
 .tanda{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;
 border:1px solid transparent;white-space:nowrap}
 .t-kosong{color:var(--redup);border-color:#3c4046}
@@ -380,8 +413,23 @@ ul.ringkas{margin:6px 0 0;padding-left:18px;color:var(--redup);font-size:12px}
 </header>
 
 <main>
+  <section class="kartu" style="grid-column:1/-1">
+    <h2>Sumber data — folder foto tiap jenis produk</h2>
+    <div class="isi">
+      <div id="sumber"></div>
+      <div class="kecil redup" style="margin-top:8px">
+        Tiap jenis produk boleh berada di drive atau komputer yang berbeda.
+        Tekan “Pilih…” untuk membuka penjelajah folder, atau tempel path langsung.
+      </div>
+      <div class="baris" style="margin-top:10px">
+        <button class="utama" onclick="simpanSumber()">Simpan sumber</button>
+        <span id="statusSumber" class="kecil redup"></span>
+      </div>
+    </div>
+  </section>
+
   <section class="kartu">
-    <h2>Folder foto — Google Drive</h2>
+    <h2>Folder foto produk</h2>
     <div class="isi">
       <div class="baris">
         <input type="text" id="cari" placeholder="saring nama folder, mis. 00751"
@@ -444,6 +492,7 @@ function muatStatus(){
     $('#akar').textContent=s.akar;
     $('#rootdrive').textContent=s.root_drive||'';
     if(document.activeElement!==$('#baseurl')) $('#baseurl').value=s.base_url;
+    if(s.sumber)gambarSumber(s.sumber);
     const sku=s.sku?`${s.sku.jumlah} SKU · ${s.sku.seri} seri`:'sku.csv belum ada';
     $('#ringkas').innerHTML=`${sku} &nbsp;•&nbsp; database ${s.db} foto (${s.unggah} di GitHub)`
       +` &nbsp;•&nbsp; ${s.output} berkas Excel`;
@@ -473,6 +522,37 @@ function isiStatus(tr,segar){
    }).catch(()=>{});
 }
 
+function gambarSumber(daftar){
+  $('#sumber').innerHTML=daftar.map((s,i)=>`
+    <div class="baris" style="margin-bottom:6px">
+      <span style="width:110px" class="kecil"><b>${s.jenis}</b></span>
+      <input type="text" class="jalurSumber" data-jenis="${s.jenis}" value="${s.path||''}"
+             style="flex:1">
+      <button onclick="pilihSumber(${i})">Pilih…</button>
+      <span class="tanda ${s.ada?'t-siap':'t-tanpasku'}">${s.ada?'ditemukan':'tidak ada'}</span>
+    </div>`).join('');
+}
+
+function pilihSumber(i){
+  const kotak=document.querySelectorAll('.jalurSumber')[i];
+  $('#statusSumber').textContent='menunggu dialog…';
+  api('/api/pilih',{awal:kotak.value}).then(r=>{
+    $('#statusSumber').textContent='';
+    if(r.path)kotak.value=r.path;
+  });
+}
+
+function simpanSumber(){
+  const isi={};
+  document.querySelectorAll('.jalurSumber').forEach(k=>isi[k.dataset.jenis]=k.value.trim());
+  $('#statusSumber').textContent='menyimpan…';
+  api('/api/sumber',{jenis:isi}).then(()=>{
+    $('#statusSumber').textContent='tersimpan';
+    setTimeout(()=>$('#statusSumber').textContent='',2000);
+    muatStatus(); muatPohon();
+  });
+}
+
 function muatPohon(){
   if(pengamat){pengamat.disconnect();pengamat=null;}
   api('/api/pohon').then(d=>{
@@ -480,11 +560,16 @@ function muatPohon(){
     d.jenis.forEach((j,idx)=>{
       const kel='j'+idx;
       const th=document.createElement('tr'); th.className='jenis';
-      th.innerHTML=`<td colspan="4">▾ ${j.jenis}
-        <span class="redup" style="font-weight:400">${j.folder.length} folder</span></td>`;
+      th.innerHTML=`<td colspan="4">
+        <span class="panah">▾</span>
+        <span class="ikon">🗂️</span><b>${j.jenis}</b>
+        <span class="redup" style="font-weight:400">— ${j.folder.length} folder</span>
+        ${j.ada?'':'<span class="tanda t-tanpasku">folder sumber tidak ditemukan</span>'}
+        <span class="redup kecil" style="font-weight:400;margin-left:8px">${j.akar}</span>
+      </td>`;
       th.onclick=()=>{
         const buka=th.dataset.buka!=='0'; th.dataset.buka=buka?'0':'1';
-        th.firstElementChild.firstChild.textContent=buka?'▸ ':'▾ ';
+        th.querySelector('.panah').textContent=buka?'▸':'▾';
         saring();
       };
       tb.appendChild(th);
@@ -494,7 +579,8 @@ function muatPohon(){
         r.className='folder '+kel;
         Object.assign(r.dataset,{jenis:j.jenis,path:f.path,dari:f.dari,sampai:f.sampai,
                                  nama:f.nama,kel:kel});
-        r.innerHTML=`<td><span class="ikon">📂</span>${f.nama}</td>
+        r.innerHTML=`<td><span class="ikon" style="margin-left:14px">📂</span>${f.nama}
+            <span class="redup kecil">· ${j.jenis}</span></td>
           <td class="angka" data-k="foto">…</td>
           <td class="angka" data-k="sku"></td>
           <td data-k="tanda"></td>`;

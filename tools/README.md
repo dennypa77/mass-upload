@@ -16,7 +16,28 @@ Cara termudah: klik dua kali **`WEB.bat`** — tampilan terbuka di browser pada
 `http://127.0.0.1:8765`. Server kecil dari pustaka bawaan Python, tidak perlu memasang
 apa pun dan tidak keluar dari komputer Anda.
 
-Tampilan web berisi penjelajah folder Google Drive dengan status per folder:
+### Sumber data — atur sekali di tiap komputer
+
+Panel paling atas berisi folder sumber **tiap jenis produk**, masing-masing berdiri sendiri:
+
+```
+JIBBITZ       [G:\My Drive\JIBBITZ            ]  [Pilih…]  ditemukan
+PIN AKRILIK   [D:\Produksi\PIN AKRILIK        ]  [Pilih…]  ditemukan
+PIN BUTTON    [\\server\foto\PIN BUTTON       ]  [Pilih…]  tidak ada
+```
+
+Jadi tiap komputer bisa punya lokasi berbeda, dan ketiga jenis tidak harus satu drive.
+Boleh drive lokal, drive Google Drive yang di-mount, atau folder jaringan.
+
+Tombol **Pilih…** membuka penjelajah folder Windows yang biasa — bukan dialog browser,
+karena browser tidak diizinkan membaca path asli sebuah folder. Path juga boleh ditempel
+langsung ke kotaknya. Tekan **Simpan sumber** untuk menyimpannya ke `config.json`.
+
+Kalau dikosongkan, tools kembali memakai cara lama: `foto.root` + `folder_drive`.
+
+### Penjelajah folder
+
+Tampilan web berisi penjelajah folder dengan status per folder:
 
 | Tanda | Arti |
 |---|---|
