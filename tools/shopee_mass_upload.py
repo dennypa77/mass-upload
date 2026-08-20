@@ -596,7 +596,12 @@ def peta_url_db():
     import gudang
     db = gudang.buka(DB_PATH)
     try:
-        return gudang.peta_url(db)
+        peta = gudang.peta_url(db)
+        tertunda = gudang.belum_terunggah(db)
+        if tertunda:
+            print('[info] {} foto sudah disalin tapi BELUM di-push ke GitHub -> '
+                  'URL-nya belum dipakai di Excel'.format(tertunda))
+        return peta
     finally:
         db.close()
 

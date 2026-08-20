@@ -12,8 +12,26 @@ pip install openpyxl pillow
 
 ## Cara pakai
 
-Cara termudah: klik dua kali **`UI.bat`** — semua langkah ada tombolnya, lengkap dengan
-status dan log. Alternatif lewat menu teks: `jalankan.bat`.
+Cara termudah: klik dua kali **`WEB.bat`** — tampilan terbuka di browser pada
+`http://127.0.0.1:8765`. Server kecil dari pustaka bawaan Python, tidak perlu memasang
+apa pun dan tidak keluar dari komputer Anda.
+
+Tampilan web berisi penjelajah folder Google Drive dengan status per folder:
+
+| Tanda | Arti |
+|---|---|
+| `belum ada foto` | folder ada, isinya kosong |
+| `foto ada, belum diproses` | siap diproses |
+| `sebagian diupload` | sebagian sudah di GitHub |
+| `SKU belum diimpor` | foto ada tapi SKU-nya tidak ada di `sku.csv` — listing belum bisa dibuat |
+| `siap dibuat listing` | foto lengkap, sudah di GitHub, SKU terdaftar |
+
+Karena folder produknya ratusan, status tiap baris **baru dihitung ketika barisnya terlihat
+di layar**, lalu disimpan di `data/cache_folder.json` supaya kunjungan berikutnya instan.
+Tombol **Hitung ulang** memaksa satu folder dihitung ulang. Ada juga kotak saring nama
+folder dan pilihan "hanya yang ada fotonya".
+
+Alternatif lain: `UI.bat` (jendela Tkinter) atau `jalankan.bat` (menu teks).
 
 Lewat baris perintah, jalankan dari folder utama project (bukan dari dalam `tools/`):
 
