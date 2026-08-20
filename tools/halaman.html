@@ -194,6 +194,25 @@ tr.rinci li{margin:2px 0}
       </div>
 
       <div class="kartu">
+        <h2>Template Shopee</h2>
+        <div class="isi">
+          <div id="daftarTemplate"></div>
+          <div class="baris" style="margin-top:10px">
+            <button class="utama" onclick="pasangTemplate()">Pasang template baru…</button>
+          </div>
+          <div class="arti">
+            Shopee menolak berkas yang dibuat dari template lama dengan pesan
+            <i>“harus menggunakan template terbaru”</i>. Kalau itu terjadi: unduh ulang
+            template dari <b>Seller Centre → Produk → Mass Upload</b> untuk cabang kategori
+            yang bersangkutan, lalu pasang di sini.
+            <br><br>Tools menentukan sendiri template itu untuk kategori yang mana dengan
+            membaca daftar kategori di dalamnya, jadi tidak perlu memilih tujuannya.
+            Versi lama dicadangkan ke <code>.bak</code>.
+          </div>
+        </div>
+      </div>
+
+      <div class="kartu">
         <h2>Alamat dasar foto</h2>
         <div class="isi">
           <div class="baris">
@@ -351,6 +370,7 @@ function muatStatus(){
     $('#akar').textContent=s.akar;
     if(document.activeElement!==$('#baseurl')) $('#baseurl').value=s.base_url;
     if(s.sumber&&document.activeElement.className!=='jalurSumber') gambarSumber(s.sumber);
+    if(s.template)gambarTemplate(s.template);
     const sku=s.sku?`${s.sku.jumlah} SKU · ${s.sku.jenis} jenis · ${s.sku.seri} seri`
                    :'belum ada';
     $('#statusSku').innerHTML=s.sku
@@ -400,6 +420,31 @@ function imporSku(){
     api('/api/perintah',{perintah:'impor',sumber:r.path}).then(x=>{
       if(!x.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
     });
+  });
+}
+
+function gambarTemplate(daftar){
+  $('#daftarTemplate').innerHTML='<table><thead><tr><th>Template</th><th>Kategori</th>'
+   +'<th title="Umur berkas. Template lama sering ditolak Shopee">Umur</th>'
+   +'<th>Dipakai</th><th>Status</th></tr></thead><tbody>'
+   +daftar.map(t=>{
+      let tanda='<span class="tanda t-siap">ok</span>';
+      if(!t.ada)tanda='<span class="tanda t-tanpasku">tidak ada</span>';
+      else if(t.kategori_hilang.length)
+        tanda='<span class="tanda t-tanpasku">kategori tidak cocok</span>';
+      else if(t.umur_hari>30)tanda='<span class="tanda t-baru">mungkin usang</span>';
+      return `<tr><td>${t.kunci}<div class="redup kecil">${t.path}</div></td>
+        <td class="angka">${t.kategori}</td>
+        <td class="angka">${t.umur_hari===null?'—':t.umur_hari+' hari'}</td>
+        <td class="kecil">${t.dipakai.join(', ')}</td>
+        <td>${tanda}</td></tr>`;
+   }).join('')+'</tbody></table>';
+}
+
+function pasangTemplate(){
+  api('/api/template',{}).then(r=>{
+    if(r.batal)return;
+    if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
   });
 }
 
