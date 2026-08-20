@@ -631,12 +631,18 @@ def susun_listing(cfg, data, toko, jenis, manifest, dari_db=None):
         per_varian = [url(d['sku']) or utama[0] for d in desain]
         if not all(per_varian):
             per_varian = [None] * len(desain)
+        # Foto tambahan milik toko (panduan ukuran) dipakai di semua listing.
+        # Yang khusus satu jenis produk didahulukan daripada yang berlaku umum.
+        tambahan = url('TAMBAHAN-' + j['slug'].upper()) or url('TAMBAHAN')
         hasil.append({
             'jenis': jenis,
             'judul': '{} - {} - {}'.format(depan, seri, belakang),
             'deskripsi': teks,
+            # SKU induk memakai SKU pertama produk itu, sesuai penomoran di sheet
+            'sku_induk': desain[0]['sku'],
             'kode_induk': '{}-{}-{}'.format(toko['kode'], j['prefix_sku'], kode),
             'desain': desain, 'utama': utama, 'per_varian': per_varian,
+            'tambahan': tambahan,
         })
     return hasil
 
@@ -659,15 +665,17 @@ def tulis_excel(cfg, path_template, path_out, listings):
             if n == 0:
                 isi(r, 'ps_product_name', L['judul'])
                 isi(r, 'ps_product_description', L['deskripsi'])
-                isi(r, 'ps_sku_parent_short', L['kode_induk'])
+                isi(r, 'ps_sku_parent_short', L['sku_induk'])
                 isi(r, 'ps_item_cover_image', L['utama'][0])
                 isi(r, 'ps_item_image_1', L['utama'][1])
                 isi(r, 'ps_item_image_2', L['utama'][2])
+                isi(r, 'ps_item_image_3', L['tambahan'])
             isi(r, 'ps_category', j['kategori'])
             isi(r, 'ps_minimum_purchase_quantity', j['min_order'])
             isi(r, 'et_title_variation_integration_no', L['kode_induk'])
             isi(r, 'et_title_variation_1', 'Desain')
-            isi(r, 'et_title_option_for_variation_1', d['varian'])
+            # nama varian memakai kode SKU-nya langsung, bukan "Desain 01"
+            isi(r, 'et_title_option_for_variation_1', d['sku'])
             isi(r, 'et_title_image_per_variation', L['per_varian'][n])
             isi(r, 'ps_price', harga)
             isi(r, 'ps_stock', j['stok'])
@@ -694,11 +702,11 @@ def periksa(cfg, listings, wajib):
         if not MIN_DESK <= len(L['deskripsi']) <= MAKS_DESK:
             pesan.append('deskripsi {} karakter: {}'.format(len(L['deskripsi']), L['judul'][:60]))
         for d in L['desain']:
-            if len(d['varian']) > MAKS_VARIAN:
-                pesan.append('nama varian > {} karakter: {}'.format(MAKS_VARIAN, d['varian']))
+            if len(d['sku']) > MAKS_VARIAN:
+                pesan.append('nama varian (SKU) > {} karakter: {}'.format(MAKS_VARIAN, d['sku']))
         if len({d['sku'] for d in L['desain']}) != n:
             pesan.append('ada SKU kembar di listing: {}'.format(L['judul'][:60]))
-        if len({d['varian'] for d in L['desain']}) != n:
+        if len({d['sku'] for d in L['desain']}) != n:
             pesan.append('ada nama varian kembar di listing: {}'.format(L['judul'][:60]))
         if not L['utama'][0]:
             pesan.append('BELUM ADA FOTO: {}'.format(L['judul'][:70]))
