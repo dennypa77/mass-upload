@@ -30,7 +30,13 @@ yang umurnya lewat 30 hari atau tidak memuat kategori yang dipakai di `config.js
 
 ```
 pip install openpyxl pillow
+python tools/shopee_mass_upload.py pasang-hook
 ```
+
+Perintah kedua memasang pengaman git. Foto di `foto-upload/` berstatus terlacak sementara
+foldernya masuk `.gitignore`; kalau folder itu kosong di disk — misalnya dibersihkan untuk
+menghemat tempat — `git add -A` akan membacanya sebagai penghapusan dan ikut menghapusnya
+dari repo. Semua URL jsDelivr langsung mati 404. Hook ini menolak commit semacam itu.
 
 ## Cara pakai
 

@@ -813,7 +813,7 @@ def perintah_build(cfg, data, sub=None):
 
 def main():
     p = argparse.ArgumentParser(description='Pembuat file Shopee Mass Upload')
-    p.add_argument('perintah', choices=['impor', 'template', 'deteksi', 'unggah', 'foto', 'url', 'cek', 'build', 'semua'])
+    p.add_argument('perintah', choices=['impor', 'template', 'pasang-hook', 'deteksi', 'unggah', 'foto', 'url', 'cek', 'build', 'semua'])
     p.add_argument('sumber', nargs='?', help='untuk "impor": berkas ekspor SKU; untuk "unggah": folder produk')
     p.add_argument('--tanpa-push', action='store_true', help='unggah: siapkan saja, jangan push ke GitHub')
     p.add_argument('--toko', help='uji coba: batasi ke satu toko, mis. "toko1" atau "Hangs"')
@@ -830,6 +830,17 @@ def main():
         if not a.sumber:
             sys.exit('Contoh: python tools/shopee_mass_upload.py impor "SKU.xlsx"')
         perintah_impor(cfg, a.sumber)
+        return
+
+    if a.perintah == 'pasang-hook':
+        asal = os.path.join(AKAR, 'tools', 'pre-commit')
+        tujuan = os.path.join(AKAR, '.git', 'hooks', 'pre-commit')
+        if not os.path.isdir(os.path.dirname(tujuan)):
+            sys.exit('Folder .git/hooks tidak ada — project ini bukan repo git.')
+        shutil.copy2(asal, tujuan)
+        os.chmod(tujuan, 0o755)
+        print('[hook] terpasang di .git/hooks/pre-commit')
+        print('[hook] commit yang menghapus foto dari foto-upload/ akan ditolak')
         return
 
     if a.perintah == 'template':
