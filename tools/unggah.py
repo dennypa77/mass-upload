@@ -352,11 +352,13 @@ def hapus_foto_tambahan(inti, cfg, folder_toko, kunci, push=True):
     db.commit()
     print('[tambahan] {} dihapus'.format(path_repo))
     if push:
-        _kirim(inti, db, [], 'Hapus foto tambahan {}'.format(kunci), tandai=False)
+        # penghapusan ini memang disengaja, jadi hook penjaga foto dilewati
+        _kirim(inti, db, [], 'Hapus foto tambahan {}'.format(kunci),
+               tandai=False, paksa=True)
     db.close()
 
 
-def _kirim(inti, db, path_repo, pesan, tandai=True):
+def _kirim(inti, db, path_repo, pesan, tandai=True, paksa=False):
     """Commit + push perubahan foto tambahan."""
     if path_repo:
         kode, keluaran = _git(inti.AKAR, ['add', '-f'] + list(path_repo))

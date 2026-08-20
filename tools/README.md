@@ -261,6 +261,28 @@ di UI) kalau ingin menyiapkan saja tanpa mengupload.
 Foto utama di-rename jadi `JB-CORTIS-utama1.png` supaya unik antar seri. Foto varian
 namanya sudah SKU, jadi dibiarkan.
 
+## Mengubah harga, berat, spesifikasi, judul, dan deskripsi
+
+Semuanya lewat tab **Pengaturan Produk**. Nilai-nilainya tersimpan di `tools/config.json`
+— itu satu-satunya sumbernya, jadi Pratinjau dan Export langsung ikut berubah. Boleh juga
+mengedit `config.json` langsung, tapi lewat tab ini ada pemeriksaannya.
+
+**Per jenis produk:** harga paket, min. order, berat, stok, dan blok spesifikasi.
+Harga per pcs dihitung otomatis (harga paket ÷ min. order) dan ditampilkan sambil mengetik,
+merah kalau jatuh di bawah Rp99.
+
+**Per toko:** tiga pasang awalan/akhiran judul, dan teks deskripsi. Di deskripsi,
+`{TOKO}` diganti nama toko dan `{SPEC}` diganti blok spesifikasi jenis produk itu — jadi
+ubah spesifikasi sekali, semua deskripsi yang memakainya ikut berubah. Jumlah karakter
+hasil jadinya dihitung langsung, dan ada pratinjau teks utuhnya.
+
+Toko yang memakai profil gaya sama berbagi teks yang sama; profil tiap toko terlihat di
+sebelah pilihan toko.
+
+Yang ditolak sebelum tersimpan: angka yang bukan angka atau di luar batas Shopee, harga per
+pcs di bawah Rp99, dan deskripsi di luar 20–3.000 karakter. Kalau ada yang ditolak,
+tidak ada satu pun perubahan yang ditulis.
+
 ## Foto tambahan per toko (panduan ukuran)
 
 Foto milik toko yang mengisi **Foto Produk 3 dan seterusnya** di semua listing toko itu —

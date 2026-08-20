@@ -177,6 +177,79 @@ def status_folder(cfg, jenis, path, dari, sampai, segar=False):
     return hasil
 
 
+ANGKA = [('harga_paket', 'Harga paket', 1, 10 ** 9),
+         ('min_order', 'Min. order', 1, 999999),
+         ('berat_gram', 'Berat (gram)', 0, 100000000),
+         ('stok', 'Stok', 0, 10000000)]
+
+
+def baca_pengaturan(cfg):
+    """Nilai-nilai yang boleh diubah lewat tab Pengaturan Produk."""
+    jenis = {}
+    for nama, j in cfg['jenis'].items():
+        jenis[nama] = {k: j.get(k) for k, _, _, _ in ANGKA}
+        jenis[nama]['spec'] = j.get('spec', '')
+        jenis[nama]['kategori'] = j.get('kategori', '')
+        jenis[nama]['harga_pcs'] = round(j['harga_paket'] / j['min_order']) if j.get('min_order') else None
+    return {
+        'jenis': jenis,
+        'toko': [{'nama': t['nama'], 'profil': t['profil']} for t in cfg['toko']],
+        'profil': {p: {'judul': v['judul'], 'deskripsi': v['deskripsi']}
+                   for p, v in cfg['profil'].items()},
+        'batas': {'deskripsi': [inti.MIN_DESK, inti.MAKS_DESK],
+                  'judul': [5, inti.MAKS_JUDUL]},
+    }
+
+
+def simpan_pengaturan(cfg, badan):
+    """Simpan perubahan ke config.json setelah diperiksa."""
+    galat = []
+    for nama, isi in (badan.get('jenis') or {}).items():
+        if nama not in cfg['jenis']:
+            continue
+        for kunci, label, kecil, besar in ANGKA:
+            if kunci not in isi:
+                continue
+            try:
+                nilai = int(str(isi[kunci]).replace('.', '').replace(',', '').strip())
+            except ValueError:
+                galat.append('{} · {}: bukan angka'.format(nama, label))
+                continue
+            if not kecil <= nilai <= besar:
+                galat.append('{} · {}: harus {} sampai {}'.format(nama, label, kecil, besar))
+                continue
+            cfg['jenis'][nama][kunci] = nilai
+        if 'spec' in isi:
+            cfg['jenis'][nama]['spec'] = isi['spec']
+        j = cfg['jenis'][nama]
+        if j['min_order'] and round(j['harga_paket'] / j['min_order']) < 99:
+            galat.append('{}: harga per pcs jadi di bawah Rp99'.format(nama))
+
+    for profil, isi in (badan.get('profil') or {}).items():
+        if profil not in cfg['profil']:
+            continue
+        for jenis, teks in (isi.get('deskripsi') or {}).items():
+            if jenis not in cfg['profil'][profil]['deskripsi']:
+                continue
+            panjang = len(teks.replace('{SPEC}', cfg['jenis'][jenis].get('spec', ''))
+                              .replace('{TOKO}', 'x' * 14))
+            if not inti.MIN_DESK <= panjang <= inti.MAKS_DESK:
+                galat.append('deskripsi {} · {}: {} karakter, batas {}-{}'.format(
+                    profil, jenis, panjang, inti.MIN_DESK, inti.MAKS_DESK))
+                continue
+            cfg['profil'][profil]['deskripsi'][jenis] = teks
+        for jenis, pasangan in (isi.get('judul') or {}).items():
+            if jenis in cfg['profil'][profil]['judul'] and pasangan:
+                cfg['profil'][profil]['judul'][jenis] = [list(p[:2]) for p in pasangan]
+
+    if galat:
+        return {'ok': False, 'galat': galat}
+    with open(inti.CONFIG, 'w', encoding='utf-8') as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    catat('[ui] pengaturan produk disimpan')
+    return {'ok': True}
+
+
 def daftar_tambahan(cfg):
     """Foto tambahan (panduan ukuran) yang sudah terpasang per toko."""
     if not os.path.exists(inti.DB_PATH):
@@ -376,6 +449,10 @@ class Penangan(BaseHTTPRequestHandler):
                     return self._kirim({'batal': True})
                 return self._kirim({'mulai': di_latar(
                     'pasang template', lambda: inti.pasang_template(cfg, berkas))})
+            if self.path == '/api/pengaturan':
+                return self._kirim(baca_pengaturan(cfg))
+            if self.path == '/api/simpan_pengaturan':
+                return self._kirim(simpan_pengaturan(cfg, badan))
             if self.path == '/api/buka':
                 peta = {'output': inti.DIR_OUT, 'foto': inti.DIR_FOTO,
                         'data': os.path.join(inti.AKAR, 'data')}
