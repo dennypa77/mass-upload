@@ -261,6 +261,23 @@ di UI) kalau ingin menyiapkan saja tanpa mengupload.
 Foto utama di-rename jadi `JB-CORTIS-utama1.png` supaya unik antar seri. Foto varian
 namanya sudah SKU, jadi dibiarkan.
 
+## Foto tambahan per toko (panduan ukuran)
+
+Satu foto per toko yang dipakai sebagai **Foto Produk 3** di semua listing toko itu —
+biasanya panduan ukuran atau spesifikasi bahan. Dipasang lewat tab **Sumber Data → Foto
+tambahan per toko**.
+
+Kalau fotonya berlaku untuk seluruh produk, pilih **semua jenis**. Kalau fotonya menyebut
+produk tertentu, pasang per jenis — yang khusus mengalahkan yang umum. Disimpan di
+`foto-upload/<toko>/umum/TAMBAHAN.png` (atau `TAMBAHAN-<JENIS>.png`).
+
+## Nama varian dan SKU induk
+
+- **Nama varian** memakai kode SKU-nya langsung (`JB-0000001`), bukan `Desain 01`
+- **SKU induk** memakai SKU pertama produk itu, mengikuti penomoran di sheet
+- **Kode Integrasi Variasi** tetap kode gabungan toko + jenis + seri (`GK-JB-CORTIS`),
+  karena kolom itu hanya perlu unik per produk
+
 ## Database URL: `data/foto.db`
 
 SQLite, satu baris per foto per toko. Isinya menumpuk — folder yang diproses hari ini tidak

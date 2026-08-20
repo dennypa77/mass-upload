@@ -177,6 +177,19 @@ def status_folder(cfg, jenis, path, dari, sampai, segar=False):
     return hasil
 
 
+def daftar_tambahan(cfg):
+    """Foto tambahan (panduan ukuran) yang sudah terpasang per toko."""
+    if not os.path.exists(inti.DB_PATH):
+        return []
+    db = gudang.buka(inti.DB_PATH)
+    try:
+        return [dict(r) for r in db.execute(
+            "SELECT toko, nama_toko, jenis, kunci, url, diunggah, ukuran "
+            "FROM foto WHERE tipe = 'tambahan' ORDER BY toko, jenis")]
+    finally:
+        db.close()
+
+
 def laporan_cek(cfg, lingkup=None):
     """Semua yang dibutuhkan untuk menghasilkan Excel, per berkas keluaran."""
     data = inti.saring_lingkup(inti.baca_sku(), lingkup or [])
@@ -212,9 +225,11 @@ def laporan_cek(cfg, lingkup=None):
                 'berat': j['berat_gram'],
                 'stok': j['stok'],
                 'kategori': j['kategori'],
-                'sku_induk': L['kode_induk'],
-                'contoh_varian': [d['varian'] for d in L['desain'][:3]],
+                'sku_induk': L['sku_induk'],
+                'kode_integrasi': L['kode_induk'],
                 'contoh_sku': [d['sku'] for d in L['desain'][:3]],
+                'sku_terakhir': L['desain'][-1]['sku'],
+                'tambahan': L['tambahan'],
             })
         keluar.append({'berkas': berkas, 'listing': rinci,
                        'peringatan': inti.periksa(cfg, listings, wajib)})
@@ -336,6 +351,15 @@ class Penangan(BaseHTTPRequestHandler):
             if self.path == '/api/pilih':
                 jalur = dialog_folder(badan.get('awal') or '')
                 return self._kirim({'path': jalur})
+            if self.path == '/api/tambahan':
+                berkas = dialog_berkas('Pilih foto tambahan (panduan ukuran)')
+                if not berkas:
+                    return self._kirim({'batal': True})
+                toko = badan.get('toko')
+                jenis = badan.get('jenis') or None
+                return self._kirim({'mulai': di_latar(
+                    'foto tambahan', lambda: modul_unggah.pasang_foto_tambahan(
+                        inti, cfg, toko, berkas, jenis, push=True))})
             if self.path == '/api/template':
                 berkas = dialog_berkas('Pilih template Shopee yang baru diunduh')
                 if not berkas:
@@ -401,6 +425,7 @@ class Penangan(BaseHTTPRequestHandler):
                    'ada': os.path.isdir(inti.dir_jenis(cfg, j))} for j in cfg['jenis']]
         return {'akar': inti.AKAR, 'root_drive': cfg['foto'].get('root'), 'sumber': sumber,
                 'template': inti.info_template(cfg),
+                'tambahan': daftar_tambahan(cfg),
                 'base_url': cfg['foto'].get('base_url') or '',
                 'toko': cfg['toko'], 'sku': sku, 'db': n_db, 'unggah': n_unggah,
                 'ringkasan': rinci, 'output': n_out}

@@ -267,6 +267,74 @@ def proses(inti, cfg, folder, push=True, lapor=None):
         print('   ! dilewati: {}'.format(t))
 
 
+def pasang_foto_tambahan(inti, cfg, folder_toko, berkas, jenis=None, push=True):
+    """Pasang satu foto tambahan (panduan ukuran) untuk sebuah toko.
+
+    Foto ini dipakai sebagai Foto Produk 3 di semua listing toko itu. Kalau
+    `jenis` diisi, foto hanya berlaku untuk jenis produk tersebut dan
+    mengalahkan foto tambahan yang berlaku umum.
+    """
+    if not os.path.exists(berkas):
+        print('[tambahan] berkas tidak ada: {}'.format(berkas))
+        return
+    nama_toko = {t['folder_foto']: t['nama'] for t in cfg['toko']}
+    if folder_toko not in nama_toko:
+        print('[tambahan] toko "{}" tidak ada di config.json'.format(folder_toko))
+        return
+
+    slug = cfg['jenis'][jenis]['slug'].upper() if jenis else None
+    kunci = 'TAMBAHAN-' + slug if slug else 'TAMBAHAN'
+    nama = kunci + '.png'
+    tujuan = os.path.join(inti.DIR_FOTO, folder_toko, 'umum')
+    os.makedirs(tujuan, exist_ok=True)
+    akhir = os.path.join(tujuan, nama)
+    dikecilkan = inti.salin_muat(berkas, akhir)
+
+    path_repo = 'foto-upload/{}/umum/{}'.format(folder_toko, nama)
+    base = (cfg['foto'].get('base_url') or '').rstrip('/')
+    baris = [{
+        'toko': folder_toko, 'nama_toko': nama_toko[folder_toko], 'jenis': jenis,
+        'seri': None, 'tipe': 'tambahan', 'kunci': kunci, 'sumber': berkas,
+        'file_lokal': akhir, 'path_repo': path_repo, 'ukuran': os.path.getsize(akhir),
+        'url': base + '/' + path_repo if base else None, 'diunggah': 0,
+    }]
+    db = gudang.buka(inti.DB_PATH)
+    gudang.simpan(db, baris)
+    print('[tambahan] {} -> {} ({:.2f} MB{})'.format(
+        nama_toko[folder_toko], path_repo, _mb(baris[0]['ukuran']),
+        ', dikecilkan' if dikecilkan else ''))
+    print('[tambahan] berlaku untuk: {}'.format(jenis or 'semua jenis produk'))
+
+    if not push:
+        print('[tambahan] push dilewati')
+        db.close()
+        return
+
+    kode, keluaran = _git(inti.AKAR, ['add', '-f', path_repo])
+    if kode:
+        print('[tambahan] git add gagal:\n' + keluaran)
+        db.close()
+        return
+    kode, keluaran = _git(inti.AKAR, [
+        '-c', 'user.email=tools@local', '-c', 'user.name=mass-upload',
+        'commit', '-m', 'Foto tambahan {} ({})'.format(
+            nama_toko[folder_toko], jenis or 'semua jenis')])
+    if kode and 'nothing to commit' not in keluaran:
+        print('[tambahan] git commit gagal:\n' + keluaran)
+        db.close()
+        return
+    kode, _ = _git(inti.AKAR, ['-c', 'http.postBuffer=157286400',
+                               '-c', 'http.version=HTTP/1.1',
+                               'push', '--progress', 'origin', 'HEAD'],
+                   cetak=lambda b: print('   ' + b))
+    if kode:
+        print('[tambahan] push gagal, coba lagi nanti')
+    else:
+        gudang.tandai_terunggah(db, [path_repo])
+        print('[tambahan] terkirim: {}'.format(baris[0]['url']))
+    db.close()
+
+
 def lapor_deteksi(inti, cfg, folder):
     """Tampilkan hasil deteksi saja, tanpa menyalin/mengunggah apa pun."""
     temuan, tanpa_seri, tak_dikenal = deteksi(inti, cfg, folder)

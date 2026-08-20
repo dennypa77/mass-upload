@@ -194,6 +194,20 @@ tr.rinci li{margin:2px 0}
       </div>
 
       <div class="kartu">
+        <h2>Foto tambahan per toko</h2>
+        <div class="isi">
+          <div id="daftarTambahan"></div>
+          <div class="arti">
+            Satu foto per toko yang dipakai sebagai <b>Foto Produk 3</b> di semua listing
+            toko itu — biasanya panduan ukuran atau spesifikasi bahan.
+            <br><br>Pilih “semua jenis” kalau fotonya berlaku untuk seluruh produk. Kalau
+            fotonya menyebut produk tertentu, pasang per jenis — yang khusus mengalahkan
+            yang umum.
+          </div>
+        </div>
+      </div>
+
+      <div class="kartu">
         <h2>Template Shopee</h2>
         <div class="isi">
           <div id="daftarTemplate"></div>
@@ -250,10 +264,10 @@ tr.rinci li{margin:2px 0}
       <dl>
         <dt>Judul</dt><dd>ada dan panjangnya 5–255 karakter</dd>
         <dt>Deskripsi</dt><dd>ada dan panjangnya 20–3.000 karakter</dd>
-        <dt>Foto utama</dt><dd>foto sampul + foto produk (maks. 3) sudah punya URL yang aktif di GitHub</dd>
+        <dt>Foto utama</dt><dd>foto sampul + foto produk sudah punya URL aktif di GitHub. Foto panduan ukuran per toko masuk sebagai Foto Produk 3</dd>
         <dt>Foto varian</dt><dd>ditulis <i>terisi / jumlah varian</i>. Shopee mewajibkan semua varian punya foto, atau tidak sama sekali</dd>
         <dt>Harga</dt><dd>harga per pcs = harga paket ÷ min. order, harus Rp99–Rp1 miliar</dd>
-        <dt>Varian</dt><dd>jumlah varian, dan tidak boleh ada SKU atau nama varian yang kembar</dd>
+        <dt>Varian</dt><dd>jumlah varian. Nama varian memakai kode SKU-nya, jadi tidak boleh ada yang kembar dan panjangnya maks. 20 karakter</dd>
       </dl>
       <div style="margin-top:8px">Klik baris berkas untuk melihat daftar peringatan lengkapnya.</div>
     </div>
@@ -371,6 +385,7 @@ function muatStatus(){
     if(document.activeElement!==$('#baseurl')) $('#baseurl').value=s.base_url;
     if(s.sumber&&document.activeElement.className!=='jalurSumber') gambarSumber(s.sumber);
     if(s.template)gambarTemplate(s.template);
+    if(s.toko)gambarTambahan(s.toko,s.tambahan||[],(s.sumber||[]).map(x=>x.jenis));
     const sku=s.sku?`${s.sku.jumlah} SKU · ${s.sku.jenis} jenis · ${s.sku.seri} seri`
                    :'belum ada';
     $('#statusSku').innerHTML=s.sku
@@ -420,6 +435,37 @@ function imporSku(){
     api('/api/perintah',{perintah:'impor',sumber:r.path}).then(x=>{
       if(!x.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
     });
+  });
+}
+
+function gambarTambahan(daftarToko,terpasang,jenisProduk){
+  const perToko={};
+  terpasang.forEach(t=>{(perToko[t.toko]=perToko[t.toko]||[]).push(t);});
+  $('#daftarTambahan').innerHTML=daftarToko.map(tk=>{
+    const punya=perToko[tk.folder_foto]||[];
+    const isi=punya.length
+      ? punya.map(p=>`<span class="tanda ${p.diunggah?'t-siap':'t-baru'}"
+          title="${p.url||''}">${p.jenis||'semua jenis'}${p.diunggah?'':' (belum diupload)'}</span>`).join(' ')
+      : '<span class="redup kecil">belum ada</span>';
+    return `<div class="baris" style="margin-bottom:8px">
+      <span style="width:96px" class="kecil"><b>${tk.nama}</b></span>
+      <span style="flex:1">${isi}</span>
+      <select id="jenis-${tk.folder_foto}" class="kecil"
+        style="background:#1b1d21;color:var(--teks);border:1px solid var(--garis);
+               border-radius:6px;padding:5px">
+        <option value="">semua jenis</option>
+        ${jenisProduk.map(j=>`<option value="${j}">${j}</option>`).join('')}
+      </select>
+      <button onclick="pasangTambahan('${tk.folder_foto}')">Pilih foto…</button>
+    </div>`;
+  }).join('');
+}
+
+function pasangTambahan(toko){
+  const jenis=$('#jenis-'+toko).value;
+  api('/api/tambahan',{toko:toko,jenis:jenis}).then(r=>{
+    if(r.batal)return;
+    if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
   });
 }
 
@@ -670,8 +716,7 @@ function muatPratinjau(){
               min ${l.min_order} pcs (Rp${l.harga_paket.toLocaleString('id')}) \u00b7
               ${l.berat} g \u00b7 stok ${l.stok.toLocaleString('id')} \u00b7
               ${l.varian} varian \u00b7 SKU induk ${l.sku_induk}</div>
-            <div class="kecil redup">varian: ${l.contoh_varian.join(', ')}\u2026 \u00b7
-              SKU: ${l.contoh_sku.join(', ')}\u2026</div>
+            <div class="kecil redup">varian (= kode SKU): ${l.contoh_sku.join(', ')} … ${l.sku_terakhir}${l.tambahan?' · <span style="color:var(--hijau)">+ foto panduan ukuran</span>':''}</div>
             <details style="margin-top:6px"><summary class="kecil redup"
               style="cursor:pointer">deskripsi (${l.panjang_deskripsi} karakter)</summary>
               <div class="kecil" style="white-space:pre-wrap;margin-top:6px;color:#c9ccd1"
