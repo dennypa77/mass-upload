@@ -19,7 +19,7 @@ Kolom template dicari lewat kode field di baris 1 (mis. "ps_price|1|1"), bukan
 lewat posisi kolom, supaya tetap jalan kalau Shopee mengubah susunan template
 atau kalau dipakai untuk kategori lain.
 """
-import argparse, csv, json, os, re, shutil, sys
+import argparse, csv, json, os, re, shutil, sys, time
 from collections import OrderedDict
 
 # openpyxl menolak file Shopee karena atribut activePane tidak baku -> longgarkan dulu
@@ -98,6 +98,89 @@ def baca_sku():
         sys.exit('Tidak ada SKU yang cocok dengan saringan: {}'.format(
             {k: v for k, v in SARING.items() if v}))
     return data
+
+
+DIR_TEMPLATE = os.path.join(AKAR, 'template')
+
+
+def kategori_template(path):
+    """Daftar kategori yang didukung sebuah berkas template (dari HiddenCatProps)."""
+    wb = openpyxl.load_workbook(path, data_only=True)
+    try:
+        if 'HiddenCatProps' not in wb.sheetnames:
+            return []
+        hp = wb['HiddenCatProps']
+        return [hp.cell(r, 1).value for r in range(1, hp.max_row + 1) if hp.cell(r, 1).value]
+    finally:
+        wb.close()
+
+
+def info_template(cfg):
+    """Keterangan tiap template yang terpasang: umur berkas, kategori, dan
+    apakah kategori yang dipakai di config benar-benar ada di dalamnya."""
+    dipakai = {}
+    for jenis, j in cfg['jenis'].items():
+        dipakai.setdefault(j['template'], []).append((jenis, j['kategori']))
+    hasil = []
+    for kunci, path in cfg['template'].items():
+        penuh = os.path.join(AKAR, path)
+        ada = os.path.exists(penuh)
+        daftar = kategori_template(penuh) if ada else []
+        kurang = [k for _, k in dipakai.get(kunci, []) if k not in daftar]
+        hasil.append({
+            'kunci': kunci, 'path': path, 'ada': ada,
+            'kategori': len(daftar),
+            'umur_hari': round((time.time() - os.path.getmtime(penuh)) / 86400, 1) if ada else None,
+            'dipakai': [x[0] for x in dipakai.get(kunci, [])],
+            'kategori_hilang': kurang,
+        })
+    return hasil
+
+
+def pasang_template(cfg, berkas):
+    """Pasang berkas template Shopee yang baru diunduh.
+
+    Tujuannya ditentukan dari isi berkas itu sendiri: kategori mana yang
+    didukungnya dicocokkan dengan kategori yang dipakai di config, jadi tidak
+    perlu memilih-milih secara manual.
+    """
+    if not os.path.exists(berkas):
+        sys.exit('Berkas tidak ditemukan: {}'.format(berkas))
+    daftar = kategori_template(berkas)
+    if not daftar:
+        sys.exit('Berkas itu tidak terlihat seperti template mass upload Shopee '
+                 '(sheet HiddenCatProps tidak ada).')
+
+    cocok = set()
+    for jenis, j in cfg['jenis'].items():
+        if j['kategori'] in daftar:
+            cocok.add(j['template'])
+    if not cocok:
+        print('[template] {} kategori terbaca, tapi tidak satu pun cocok dengan '
+              'kategori di config.json:'.format(len(daftar)))
+        for jenis, j in cfg['jenis'].items():
+            print('   {:<12} butuh: {}'.format(jenis, j['kategori']))
+        print('   Contoh kategori di berkas itu:')
+        for k in daftar[:5]:
+            print('     - {}'.format(k))
+        sys.exit('Unduh template untuk cabang kategori yang sesuai.')
+    if len(cocok) > 1:
+        sys.exit('Berkas itu cocok untuk lebih dari satu template: {}'.format(sorted(cocok)))
+
+    kunci = cocok.pop()
+    tujuan = os.path.join(AKAR, cfg['template'][kunci])
+    os.makedirs(os.path.dirname(tujuan), exist_ok=True)
+    if os.path.exists(tujuan):
+        cadangan = tujuan + '.bak'
+        shutil.copy2(tujuan, cadangan)
+        print('[template] versi lama dicadangkan ke {}'.format(os.path.basename(cadangan)))
+    shutil.copy2(berkas, tujuan)
+    print('[template] "{}" dipasang sebagai template {}'.format(
+        os.path.basename(berkas), kunci))
+    print('[template] {} kategori didukung, dipakai oleh: {}'.format(
+        len(daftar),
+        ', '.join(j for j, x in cfg['jenis'].items() if x['template'] == kunci)))
+    return kunci
 
 
 def saring_lingkup(data, lingkup):
@@ -677,6 +760,16 @@ def kumpulkan(cfg, data):
 
 
 def perintah_cek(cfg, data, diam=False):
+    for t in info_template(cfg):
+        if not t['ada']:
+            print('[cek] ! template {} tidak ada: {}'.format(t['kunci'], t['path']))
+        elif t['kategori_hilang']:
+            print('[cek] ! template {} tidak memuat kategori: {}'.format(
+                t['kunci'], ', '.join(t['kategori_hilang'])))
+        elif t['umur_hari'] and t['umur_hari'] > 30:
+            print('[cek] ! template {} sudah berumur {} hari. Shopee sering menolak '
+                  'template lama - unduh ulang kalau upload ditolak.'.format(
+                      t['kunci'], int(t['umur_hari'])))
     paket = kumpulkan(cfg, data)
     wajib = {}
     for jenis, j in cfg['jenis'].items():
@@ -720,7 +813,7 @@ def perintah_build(cfg, data, sub=None):
 
 def main():
     p = argparse.ArgumentParser(description='Pembuat file Shopee Mass Upload')
-    p.add_argument('perintah', choices=['impor', 'deteksi', 'unggah', 'foto', 'url', 'cek', 'build', 'semua'])
+    p.add_argument('perintah', choices=['impor', 'template', 'deteksi', 'unggah', 'foto', 'url', 'cek', 'build', 'semua'])
     p.add_argument('sumber', nargs='?', help='untuk "impor": berkas ekspor SKU; untuk "unggah": folder produk')
     p.add_argument('--tanpa-push', action='store_true', help='unggah: siapkan saja, jangan push ke GitHub')
     p.add_argument('--toko', help='uji coba: batasi ke satu toko, mis. "toko1" atau "Hangs"')
@@ -737,6 +830,18 @@ def main():
         if not a.sumber:
             sys.exit('Contoh: python tools/shopee_mass_upload.py impor "SKU.xlsx"')
         perintah_impor(cfg, a.sumber)
+        return
+
+    if a.perintah == 'template':
+        if not a.sumber:
+            for t in info_template(cfg):
+                print('{:<20} {:<34} {} kategori · {} hari · dipakai {}'.format(
+                    t['kunci'], t['path'], t['kategori'],
+                    int(t['umur_hari']) if t['umur_hari'] is not None else '?',
+                    ', '.join(t['dipakai'])))
+            print('\nUntuk mengganti: python tools/shopee_mass_upload.py template "unduhan.xlsx"')
+            return
+        pasang_template(cfg, a.sumber)
         return
 
     if a.perintah == 'deteksi':

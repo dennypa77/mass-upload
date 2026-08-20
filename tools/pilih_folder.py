@@ -19,8 +19,9 @@ def main():
     akar.withdraw()
     akar.attributes('-topmost', True)
     if '--berkas' in sys.argv:
+        judul = next((a for a in sys.argv[2:] if not a.startswith('--')), '')
         jalur = filedialog.askopenfilename(
-            title='Pilih ekspor sheet SKU',
+            title=judul or 'Pilih berkas',
             filetypes=[('Excel / CSV', '*.xlsx *.xlsm *.csv'), ('Semua berkas', '*.*')],
             initialdir=awal or None)
     else:

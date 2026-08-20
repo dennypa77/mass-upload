@@ -4,6 +4,28 @@ Membuat file Excel siap upload ke Shopee dari daftar SKU + foto produk di Google
 Kalau ada SKU, desain, seri, atau toko baru — cukup update `data/sku.csv` dan `tools/config.json`,
 lalu jalankan ulang. Tidak perlu menyentuh kode.
 
+## Template Shopee harus yang terbaru
+
+Shopee menolak berkas yang dibuat dari template lama dengan pesan
+*“harus menggunakan template terbaru”*. Penyebabnya bukan susunan kolom, tapi **tanda tangan
+di baris 2 template** — tiap unduhan punya kode sendiri, dan Shopee memeriksanya. Kode jasa
+kirim juga bisa berubah (`channel_id.89999` → `channel_id.8003`).
+
+Kalau upload ditolak: unduh ulang template dari **Seller Centre → Produk → Mass Upload**
+untuk cabang kategori yang bersangkutan, lalu pasang lewat tombol
+**Pasang template baru…** di tab Sumber Data, atau:
+
+```
+python tools/shopee_mass_upload.py template "unduhan.xlsx"
+```
+
+Tools membaca daftar kategori di dalam berkas itu dan menentukan sendiri template itu untuk
+kategori yang mana — tidak perlu memilih tujuannya. Versi lama dicadangkan ke `.bak`.
+Untuk melihat template yang terpasang: `python tools/shopee_mass_upload.py template`.
+
+Template disimpan di folder `template/`. Perintah `cek` memperingatkan kalau ada template
+yang umurnya lewat 30 hari atau tidak memuat kategori yang dipakai di `config.json`.
+
 ## Sekali saja: pasang kebutuhan
 
 ```

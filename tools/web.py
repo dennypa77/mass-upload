@@ -229,10 +229,10 @@ def dialog_folder(awal=''):
     return (hasil.stdout or '').strip()
 
 
-def dialog_berkas():
-    """Dialog pilih berkas (.xlsx/.csv) untuk impor SKU."""
+def dialog_berkas(judul=''):
+    """Dialog pilih berkas (.xlsx/.csv) untuk impor SKU atau pasang template."""
     skrip = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pilih_folder.py')
-    hasil = subprocess.run([sys.executable, skrip, '', '--berkas'],
+    hasil = subprocess.run([sys.executable, skrip, '', '--berkas', judul],
                            capture_output=True, text=True, timeout=300)
     return (hasil.stdout or '').strip()
 
@@ -336,6 +336,12 @@ class Penangan(BaseHTTPRequestHandler):
             if self.path == '/api/pilih':
                 jalur = dialog_folder(badan.get('awal') or '')
                 return self._kirim({'path': jalur})
+            if self.path == '/api/template':
+                berkas = dialog_berkas('Pilih template Shopee yang baru diunduh')
+                if not berkas:
+                    return self._kirim({'batal': True})
+                return self._kirim({'mulai': di_latar(
+                    'pasang template', lambda: inti.pasang_template(cfg, berkas))})
             if self.path == '/api/buka':
                 peta = {'output': inti.DIR_OUT, 'foto': inti.DIR_FOTO,
                         'data': os.path.join(inti.AKAR, 'data')}
@@ -394,6 +400,7 @@ class Penangan(BaseHTTPRequestHandler):
                    'khusus': bool((cfg['jenis'][j].get('path_drive') or '').strip()),
                    'ada': os.path.isdir(inti.dir_jenis(cfg, j))} for j in cfg['jenis']]
         return {'akar': inti.AKAR, 'root_drive': cfg['foto'].get('root'), 'sumber': sumber,
+                'template': inti.info_template(cfg),
                 'base_url': cfg['foto'].get('base_url') or '',
                 'toko': cfg['toko'], 'sku': sku, 'db': n_db, 'unggah': n_unggah,
                 'ringkasan': rinci, 'output': n_out}
