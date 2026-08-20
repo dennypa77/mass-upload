@@ -63,6 +63,10 @@ textarea{background:#1b1d21;border:1px solid var(--garis);color:var(--teks);
 border-radius:6px;padding:9px 11px;font:13px/1.6 inherit;width:100%;resize:vertical}
 .kolomAngka{display:grid;grid-template-columns:repeat(4,minmax(90px,1fr));gap:8px}
 section.lembar.aktif{display:block}
+nav.subtab{padding:0;margin:0 0 14px;border-bottom:1px solid var(--garis)}
+nav.subtab button{padding:9px 18px;font-size:13px}
+.lembarJenis{display:none}
+.lembarJenis.aktif{display:block}
 
 /* keterangan */
 .arti{border-left:3px solid #3a3f47;padding:2px 0 2px 12px;margin:10px 0 0;
@@ -277,6 +281,7 @@ tr.rinci li{margin:2px 0}
     <span id="statusAtur" class="kecil"></span>
   </div>
 
+  <nav class="tab subtab" id="tabJenis"></nav>
   <div id="aturJenis"></div>
 
   <div class="kartu">
@@ -615,7 +620,13 @@ function muatPengaturan(){
       return;
     }
     ATUR=d;
+    const namaJenis=Object.keys(d.jenis);
+    const aktif=window._jenisAktif&&namaJenis.includes(window._jenisAktif)
+      ? window._jenisAktif : namaJenis[0];
+    $('#tabJenis').innerHTML=namaJenis.map(n=>
+      `<button class="${n===aktif?'aktif':''}" onclick="pilihJenis('${n}')">${n}</button>`).join('');
     $('#aturJenis').innerHTML=Object.entries(d.jenis).map(([nama,j])=>`
+      <div class="lembarJenis ${nama===aktif?'aktif':''}" data-jenis="${nama}">
       <div class="kartu" style="margin-bottom:14px">
         <h2>${nama} <span style="text-transform:none;font-weight:400">
           — ${j.kategori.split('/').slice(-1)[0]}</span></h2>
@@ -648,11 +659,20 @@ function muatPengaturan(){
 
           ${kelompokProfil().map(([profil,tokoList])=>kartuTeks(nama,profil,tokoList)).join('')}
         </div>
-      </div>`).join('');
+      </div></div>`).join('');
+    window._jenisAktif=aktif;
     Object.keys(d.jenis).forEach(hitungHarga);
     hitungSemuaDesk();
     $('#statusAtur').textContent='';
   });
+}
+
+function pilihJenis(nama){
+  window._jenisAktif=nama;
+  document.querySelectorAll('#tabJenis button').forEach(b=>
+    b.classList.toggle('aktif', b.textContent===nama));
+  document.querySelectorAll('.lembarJenis').forEach(el=>
+    el.classList.toggle('aktif', el.dataset.jenis===nama));
 }
 
 function css(s){return s.replace(/[^A-Za-z0-9]/g,'_');}
