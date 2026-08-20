@@ -307,6 +307,37 @@ Yang ditolak sebelum tersimpan: angka yang bukan angka atau di luar batas Shopee
 pcs di bawah Rp99, dan deskripsi di luar 20–3.000 karakter. Kalau ada yang ditolak,
 tidak ada satu pun perubahan yang ditulis.
 
+## Google Drive streaming — jangan dibuat "available offline"
+
+Folder produk di Drive isinya didominasi berkas CorelDRAW, sedangkan yang dibutuhkan hanya
+PNG-nya. Contoh satu folder `PIN AKRILIK / PRODUK 00001 - 00050`:
+
+| Jenis berkas | Jumlah | Ukuran |
+|---|---|---|
+| `.cdr` | 59 | 1.056 MB |
+| `.png` | 209 | **86 MB** |
+| lain-lain | 6 | ~0 MB |
+| | | **total 1.142 MB** |
+
+Kalau folder itu ditandai *Available offline*, Drive mengunduh seluruh **1.142 MB**.
+Padahal tools hanya membuka berkas PNG — `.cdr` tidak pernah dibuka, jadi Drive tidak
+pernah mengunduhnya. **Biarkan tetap streaming**: memproses folder itu hanya menarik 86 MB,
+tiga belas kali lebih sedikit.
+
+Buktinya ada di cache Drive: setelah tools membaca ratusan foto, `%LOCALAPPDATA%\Google\DriveFS`
+hanya berisi sekitar 1,7 GB. Kalau berkas CorelDRAW ikut terunduh, angkanya sudah ratusan GB.
+
+Dua hal yang membuat penarikan itu seringan mungkin:
+
+- **Disalin 8 berkas sekaligus** — Drive streaming lebih banyak menunggu jaringan daripada
+  memindahkan data, jadi menyalin paralel membuat waktu tunggunya saling menutupi. Jumlahnya
+  bisa diubah lewat `config.json` → `salinan_serentak`
+- **Yang sudah pernah disalin dilewati** — menjalankan ulang folder yang sama tidak
+  mengunduh apa pun. Terukur: folder 159 foto yang sudah tersalin selesai dalam 0,4 detik
+
+Jadi urutan yang paling hemat: proses folder satu per satu lewat tools, jangan menandai
+apa pun offline, dan biarkan Drive mengelola cache-nya sendiri.
+
 ## Foto tambahan per toko (panduan ukuran)
 
 Foto milik toko yang mengisi **Foto Produk 3 dan seterusnya** di semua listing toko itu —
