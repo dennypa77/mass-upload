@@ -44,6 +44,10 @@ Cara termudah: klik dua kali **`WEB.bat`** — tampilan terbuka di browser pada
 `http://127.0.0.1:8765`. Server kecil dari pustaka bawaan Python, tidak perlu memasang
 apa pun dan tidak keluar dari komputer Anda.
 
+Server memantau kode Python-nya sendiri dan **menjalankan ulang otomatis** kalau ada
+perubahan, jadi setelah menarik pembaruan cukup segarkan browser. Penjalanan ulang ditunda
+selama masih ada pekerjaan berlangsung.
+
 ### Sumber data — atur sekali di tiap komputer
 
 Panel paling atas berisi folder sumber **tiap jenis produk**, masing-masing berdiri sendiri:
@@ -267,17 +271,34 @@ Semuanya lewat tab **Pengaturan Produk**. Nilai-nilainya tersimpan di `tools/con
 — itu satu-satunya sumbernya, jadi Pratinjau dan Export langsung ikut berubah. Boleh juga
 mengedit `config.json` langsung, tapi lewat tab ini ada pemeriksaannya.
 
-**Per jenis produk:** harga paket, min. order, berat, stok, dan blok spesifikasi.
-Harga per pcs dihitung otomatis (harga paket ÷ min. order) dan ditampilkan sambil mengetik,
-merah kalau jatuh di bawah Rp99.
+Satu kartu per jenis produk, isinya semua yang berkaitan dengan jenis itu — tanpa dropdown,
+semuanya langsung terlihat:
 
-**Per toko:** tiga pasang awalan/akhiran judul, dan teks deskripsi. Di deskripsi,
-`{TOKO}` diganti nama toko dan `{SPEC}` diganti blok spesifikasi jenis produk itu — jadi
-ubah spesifikasi sekali, semua deskripsi yang memakainya ikut berubah. Jumlah karakter
-hasil jadinya dihitung langsung, dan ada pratinjau teks utuhnya.
+```
+JIBBITZ — Aksesoris & Perawatan Sepatu Lainnya
+  Harga paket  Min. order  Berat (g)  Stok        harga per pcs: Rp7.800
+  [ 23400 ]    [   3   ]   [   5  ]   [999999]
 
-Toko yang memakai profil gaya sama berbagi teks yang sama; profil tiap toko terlihat di
-sebelah pilihan toko.
+  Spesifikasi                    ← disisipkan ke tiap deskripsi di tempat {SPEC}
+  [ textarea ]
+
+  Graphica Key            gaya "eksklusif"
+    awalan — akhiran  × 3
+    Deskripsi lengkap produk     · jadi 738 karakter (batas 20–3000)
+    [ textarea ]
+
+  Kaitin.aja              gaya "lucu"
+    …
+  Hangs on You            gaya "fandom"
+    …
+```
+
+Harga per pcs dihitung otomatis (harga paket ÷ min. order) sambil mengetik, merah kalau
+jatuh di bawah Rp99. Jumlah karakter deskripsi dihitung **setelah** `{TOKO}` dan `{SPEC}`
+disubstitusi, jadi itu panjang yang sebenarnya masuk ke Shopee.
+
+Kalau dua toko memakai profil gaya yang sama, keduanya ditampilkan sebagai **satu** editor
+dengan keterangan "dipakai bersama" — supaya tidak saling menimpa tanpa disadari.
 
 Yang ditolak sebelum tersimpan: angka yang bukan angka atau di luar batas Shopee, harga per
 pcs di bawah Rp99, dan deskripsi di luar 20–3.000 karakter. Kalau ada yang ditolak,

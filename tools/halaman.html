@@ -88,8 +88,8 @@ tr.rinci li{margin:2px 0}
 
 <nav class="tab">
   <button class="aktif" data-lembar="sumber">Sumber Data</button>
-  <button data-lembar="folder">1. Folder Produk</button>
   <button data-lembar="atur">Pengaturan Produk</button>
+  <button data-lembar="folder">1. Folder Produk</button>
   <button data-lembar="siap">2. Cek Kesiapan</button>
   <button data-lembar="pratinjau">3. Pratinjau</button>
   <button data-lembar="ekspor">4. Export Mass Upload</button>
@@ -271,41 +271,25 @@ tr.rinci li{margin:2px 0}
 
 <!-- ------------------------------------------------------------ PENGATURAN -->
 <section class="lembar" id="lembar-atur">
-  <div class="kartu">
-    <h2>Harga, berat, dan spesifikasi per jenis produk</h2>
-    <div class="isi"><div id="aturJenis"></div></div>
-  </div>
-
-  <div class="kartu" style="margin-top:14px">
-    <h2>Judul &amp; deskripsi lengkap — per toko</h2>
-    <div class="isi">
-      <div class="baris">
-        <span class="kecil redup">Toko</span>
-        <select id="aturToko" onchange="muatTeks()" class="pilihan"></select>
-        <span class="kecil redup" style="margin-left:10px">Jenis produk</span>
-        <select id="aturJenisTeks" onchange="muatTeks()" class="pilihan"></select>
-        <span class="kecil redup" id="profilAktif"></span>
-      </div>
-      <div id="aturTeks" style="margin-top:12px"></div>
-    </div>
-  </div>
-
-  <div class="baris" style="margin-top:14px">
+  <div class="baris" style="margin-bottom:12px">
     <button class="utama" onclick="simpanPengaturan()">Simpan semua perubahan</button>
     <button onclick="muatPengaturan()">Batalkan, muat ulang</button>
     <span id="statusAtur" class="kecil"></span>
   </div>
 
-  <div class="kartu" style="margin-top:14px">
+  <div id="aturJenis"></div>
+
+  <div class="kartu">
     <div class="isi arti">
       Semua nilai di sini tersimpan di <code>tools/config.json</code> — itu satu-satunya
       sumbernya, jadi hasil <b>Pratinjau</b> dan <b>Export</b> langsung ikut berubah.
       <br><br><b>Harga paket</b> adalah harga untuk satu kali pembelian minimum. Harga per
       pcs yang masuk ke Shopee dihitung otomatis: harga paket ÷ min. order.
-      <br><br>Di deskripsi, <code>{TOKO}</code> diganti nama toko dan <code>{SPEC}</code>
-      diganti blok spesifikasi jenis produk itu. Jadi cukup ubah spesifikasi sekali, semua
-      deskripsi yang memakainya ikut berubah.
-      <br><br>Tiap jenis punya 3 pasang awalan/akhiran judul yang dipakai bergantian antar
+      <br><br><b>Spesifikasi</b> ditulis sekali per jenis produk, lalu disisipkan ke setiap
+      deskripsi di tempat penanda <code>{SPEC}</code>. Penanda <code>{TOKO}</code> diganti
+      nama toko. Jadi untuk mengubah ukuran atau bahan cukup sunting spesifikasinya, semua
+      deskripsi ikut berubah.
+      <br><br>Tiap toko punya 3 pasang awalan/akhiran judul yang dipakai bergantian antar
       seri, supaya judul antar listing tidak kembar.
     </div>
   </div>
@@ -611,116 +595,143 @@ function pasangTemplate(){
 
 let ATUR=null;
 
+// Toko yang memakai profil gaya sama berbagi judul & deskripsi, jadi ditampilkan
+// sebagai satu editor supaya tidak saling menimpa tanpa disadari.
+function kelompokProfil(){
+  const peta=new Map();
+  (ATUR.toko||[]).forEach(t=>{
+    if(!peta.has(t.profil))peta.set(t.profil,[]);
+    peta.get(t.profil).push(t.nama);
+  });
+  return [...peta.entries()];
+}
+
 function muatPengaturan(){
   api('/api/pengaturan',{}).then(d=>{
+    if(!d||!d.jenis){
+      $('#aturJenis').innerHTML='<div class="kartu"><div class="isi" '
+        +'style="color:var(--merah)">Server belum menyediakan data pengaturan. '
+        +'Tutup jendela server lalu jalankan WEB.bat lagi.</div></div>';
+      return;
+    }
     ATUR=d;
     $('#aturJenis').innerHTML=Object.entries(d.jenis).map(([nama,j])=>`
-      <div style="border:1px solid var(--garis);border-radius:8px;padding:12px;margin-bottom:10px">
-        <div class="baris" style="margin-bottom:8px">
-          <b>${nama}</b>
-          <span class="redup kecil">${j.kategori.split('/').slice(-1)[0]}</span>
-          <div style="flex:1"></div>
-          <span class="redup kecil" id="hargaPcs-${nama}"></span>
+      <div class="kartu" style="margin-bottom:14px">
+        <h2>${nama} <span style="text-transform:none;font-weight:400">
+          — ${j.kategori.split('/').slice(-1)[0]}</span></h2>
+        <div class="isi">
+          <div class="baris" style="margin-bottom:8px">
+            <span class="kecil redup">Harga, berat, dan stok</span>
+            <div style="flex:1"></div>
+            <span class="kecil" id="hargaPcs-${css(nama)}"></span>
+          </div>
+          <div class="kolomAngka">
+            <label class="kecil redup">Harga paket (Rp)
+              <input type="text" data-j="${nama}" data-k="harga_paket" value="${j.harga_paket}"
+                     oninput="hitungHarga('${nama}')"></label>
+            <label class="kecil redup">Min. order (pcs)
+              <input type="text" data-j="${nama}" data-k="min_order" value="${j.min_order}"
+                     oninput="hitungHarga('${nama}')"></label>
+            <label class="kecil redup">Berat (gram)
+              <input type="text" data-j="${nama}" data-k="berat_gram" value="${j.berat_gram}"></label>
+            <label class="kecil redup">Stok
+              <input type="text" data-j="${nama}" data-k="stok" value="${j.stok}"></label>
+          </div>
+
+          <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--garis)">
+            <b>Spesifikasi</b>
+            <div class="kecil redup">Disisipkan ke setiap deskripsi di bawah, di tempat
+              penanda <code>{SPEC}</code>.</div>
+          </div>
+          <textarea rows="6" data-j="${nama}" data-k="spec"
+            oninput="hitungSemuaDesk()" style="margin-top:6px">${lolos(j.spec)}</textarea>
+
+          ${kelompokProfil().map(([profil,tokoList])=>kartuTeks(nama,profil,tokoList)).join('')}
         </div>
-        <div class="kolomAngka">
-          <label class="kecil redup">Harga paket (Rp)
-            <input type="text" data-j="${nama}" data-k="harga_paket" value="${j.harga_paket}"
-                   oninput="hitungHarga('${nama}')"></label>
-          <label class="kecil redup">Min. order (pcs)
-            <input type="text" data-j="${nama}" data-k="min_order" value="${j.min_order}"
-                   oninput="hitungHarga('${nama}')"></label>
-          <label class="kecil redup">Berat (gram)
-            <input type="text" data-j="${nama}" data-k="berat_gram" value="${j.berat_gram}"></label>
-          <label class="kecil redup">Stok
-            <input type="text" data-j="${nama}" data-k="stok" value="${j.stok}"></label>
-        </div>
-        <div class="kecil redup" style="margin-top:10px">Spesifikasi — muncul di deskripsi
-          menggantikan <code>{SPEC}</code></div>
-        <textarea rows="6" data-j="${nama}" data-k="spec">${j.spec}</textarea>
       </div>`).join('');
     Object.keys(d.jenis).forEach(hitungHarga);
-    $('#aturToko').innerHTML=d.toko.map(t=>`<option value="${t.nama}">${t.nama}</option>`).join('');
-    $('#aturJenisTeks').innerHTML=Object.keys(d.jenis).map(j=>`<option>${j}</option>`).join('');
-    muatTeks();
+    hitungSemuaDesk();
     $('#statusAtur').textContent='';
   });
 }
 
+function css(s){return s.replace(/[^A-Za-z0-9]/g,'_');}
+function lolos(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function kartuTeks(jenis,profil,tokoList){
+  const p=ATUR.profil[profil]||{judul:{},deskripsi:{}};
+  const judul=p.judul[jenis]||[];
+  const desk=p.deskripsi[jenis]||'';
+  const id=css(jenis)+'-'+css(profil);
+  return `
+    <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--garis)">
+      <b>${tokoList.join(' + ')}</b>
+      <span class="redup kecil">gaya "${profil}"${tokoList.length>1
+        ? ' — dipakai bersama, satu perubahan berlaku untuk semuanya':''}</span>
+    </div>
+    <div class="kecil redup" style="margin:8px 0 4px">Awalan &amp; akhiran judul —
+      dipakai bergantian antar seri</div>
+    ${judul.map((pasang,i)=>`<div class="baris" style="margin:5px 0">
+      <input type="text" class="judulAwal" data-p="${profil}" data-jn="${jenis}"
+             value="${lolos(pasang[0]).replace(/"/g,'&quot;')}" placeholder="awalan" style="flex:1">
+      <span class="redup">—</span>
+      <input type="text" class="judulAkhir" data-p="${profil}" data-jn="${jenis}"
+             value="${lolos(pasang[1]).replace(/"/g,'&quot;')}" placeholder="akhiran" style="flex:1">
+    </div>`).join('')}
+    <div class="kecil redup" style="margin:10px 0 4px"><b style="color:var(--teks)">
+      Deskripsi lengkap produk</b> — seluruh teks yang tampil di halaman Shopee
+      <span id="hitung-${id}"></span></div>
+    <textarea rows="14" class="teksDesk" data-p="${profil}" data-jn="${jenis}"
+      data-id="${id}" oninput="hitungDesk(this)">${lolos(desk)}</textarea>`;
+}
+
 function hitungHarga(nama){
-  const g=k=>document.querySelector(`[data-j="${nama}"][data-k="${k}"]`).value.replace(/\D/g,'');
+  const g=k=>(document.querySelector('[data-j="'+nama+'"][data-k="'+k+'"]')||{value:''})
+              .value.replace(/\D/g,'');
   const p=+g('harga_paket'), m=+g('min_order');
-  const el=$('#hargaPcs-'+nama);
+  const el=$('#hargaPcs-'+css(nama));
+  if(!el)return;
   if(!p||!m){el.textContent='';return;}
   const pcs=Math.round(p/m);
-  el.innerHTML=`harga per pcs: <b style="color:${pcs>=99?'var(--hijau)':'var(--merah)'}">`
-    +`Rp${pcs.toLocaleString('id')}</b>`;
+  el.innerHTML='harga per pcs: <b style="color:'+(pcs>=99?'var(--hijau)':'var(--merah)')
+    +'">Rp'+pcs.toLocaleString('id')+'</b>';
 }
 
-function profilToko(nama){
-  const t=(ATUR.toko||[]).find(x=>x.nama===nama);
-  return t?t.profil:null;
-}
-
-function muatTeks(){
-  if(!ATUR)return;
-  const toko=$('#aturToko').value, jenis=$('#aturJenisTeks').value;
-  const profil=profilToko(toko);
-  if(!profil||!ATUR.profil[profil])return;
-  $('#profilAktif').textContent='profil gaya: '+profil
-    +' — dipakai bersama oleh toko lain yang memakai profil sama';
-  const desk=ATUR.profil[profil].deskripsi[jenis]||'';
-  const judul=ATUR.profil[profil].judul[jenis]||[];
-  $('#aturTeks').innerHTML=`
-    <div class="kecil redup">Awalan &amp; akhiran judul — dipakai bergantian antar seri</div>
-    ${judul.map((p,i)=>`<div class="baris" style="margin:6px 0">
-      <input type="text" class="judulAwal" value="${p[0].replace(/"/g,'&quot;')}"
-             placeholder="awalan" style="flex:1">
-      <span class="redup">—</span>
-      <input type="text" class="judulAkhir" value="${p[1].replace(/"/g,'&quot;')}"
-             placeholder="akhiran" style="flex:1"></div>`).join('')}
-    <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--garis)">
-      <b>Deskripsi lengkap produk</b>
-      <div class="kecil redup">Seluruh teks yang tampil di halaman produk Shopee.
-        <code>{TOKO}</code> diganti nama toko, <code>{SPEC}</code> diganti blok
-        spesifikasi. <span id="hitungDesk"></span></div>
-    </div>
-    <textarea id="teksDeskripsi" rows="18" oninput="hitungDesk()"
-      style="margin-top:6px">${desk}</textarea>
-    <details style="margin-top:8px"><summary class="kecil redup" style="cursor:pointer">
-      lihat hasil jadinya untuk ${toko}</summary>
-      <div id="hasilDesk" class="kecil" style="white-space:pre-wrap;margin-top:8px;
-           color:#c9ccd1;background:#1b1d21;padding:10px;border-radius:6px"></div></details>`;
-  $('#aturTeks').querySelector('details').ontoggle=hitungDesk;
-  hitungDesk();
-}
-
-function hitungDesk(){
-  const toko=$('#aturToko').value, jenis=$('#aturJenisTeks').value;
-  const spec=document.querySelector(`textarea[data-j="${jenis}"][data-k="spec"]`);
-  const jadi=($('#teksDeskripsi').value||'')
-    .replace('{SPEC}',spec?spec.value:'').replace(/\{TOKO\}/g,toko);
+function hitungDesk(el){
+  const jenis=el.dataset.jn;
+  const spec=document.querySelector('textarea[data-j="'+jenis+'"][data-k="spec"]');
+  const toko=(ATUR.toko||[]).find(t=>t.profil===el.dataset.p);
+  const jadi=(el.value||'').replace('{SPEC}',spec?spec.value:'')
+                           .replace(/\{TOKO\}/g,toko?toko.nama:'Toko');
   const [a,b]=ATUR.batas.deskripsi;
   const baik=jadi.length>=a&&jadi.length<=b;
-  $('#hitungDesk').innerHTML=`· jadi <b style="color:${baik?'var(--hijau)':'var(--merah)'}">`
-    +`${jadi.length}</b> karakter (batas ${a}–${b})`;
-  const h=$('#hasilDesk'); if(h)h.textContent=jadi;
+  const t=$('#hitung-'+el.dataset.id);
+  if(t)t.innerHTML='· jadi <b style="color:'+(baik?'var(--hijau)':'var(--merah)')+'">'
+    +jadi.length+'</b> karakter (batas '+a+'–'+b+')';
 }
 
+function hitungSemuaDesk(){document.querySelectorAll('.teksDesk').forEach(hitungDesk);}
+
 function simpanPengaturan(){
-  const jenis={};
+  const jenis={}, profil={};
   document.querySelectorAll('#aturJenis [data-j]').forEach(el=>{
     (jenis[el.dataset.j]=jenis[el.dataset.j]||{})[el.dataset.k]=el.value;
   });
-  const toko=$('#aturToko').value, jn=$('#aturJenisTeks').value, profil=profilToko(toko);
-  const awal=[...document.querySelectorAll('.judulAwal')].map(e=>e.value.trim());
-  const akhir=[...document.querySelectorAll('.judulAkhir')].map(e=>e.value.trim());
-  const badan={jenis:jenis,profil:{}};
-  badan.profil[profil]={
-    deskripsi:{[jn]:$('#teksDeskripsi').value},
-    judul:{[jn]:awal.map((a,i)=>[a,akhir[i]||''])},
-  };
+  document.querySelectorAll('.teksDesk').forEach(el=>{
+    const p=profil[el.dataset.p]=profil[el.dataset.p]||{deskripsi:{},judul:{}};
+    p.deskripsi[el.dataset.jn]=el.value;
+  });
+  document.querySelectorAll('.judulAwal').forEach(el=>{
+    const p=profil[el.dataset.p]=profil[el.dataset.p]||{deskripsi:{},judul:{}};
+    (p.judul[el.dataset.jn]=p.judul[el.dataset.jn]||[]).push([el.value.trim(),'']);
+  });
+  document.querySelectorAll('.judulAkhir').forEach(el=>{
+    const daftar=profil[el.dataset.p].judul[el.dataset.jn];
+    const kosong=daftar.find(x=>x[1]==='');
+    if(kosong)kosong[1]=el.value.trim();
+  });
   $('#statusAtur').textContent='menyimpan…';
-  api('/api/simpan_pengaturan',badan).then(r=>{
+  api('/api/simpan_pengaturan',{jenis:jenis,profil:profil}).then(r=>{
     if(r.ok){
       $('#statusAtur').innerHTML='<span style="color:var(--hijau)">tersimpan</span>';
       muatPengaturan(); muatStatus();
