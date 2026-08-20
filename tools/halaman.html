@@ -57,6 +57,11 @@ font-size:12.5px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 #bilah .kepingan{background:#2d3a4d;border:1px solid #3c5a80;border-radius:10px;
 padding:1px 9px;font-size:11px}
 td.pilihkotak{width:34px;text-align:center}
+select.pilihan{background:#1b1d21;color:var(--teks);border:1px solid var(--garis);
+border-radius:6px;padding:6px 9px;font:inherit}
+textarea{background:#1b1d21;border:1px solid var(--garis);color:var(--teks);
+border-radius:6px;padding:9px 11px;font:13px/1.6 inherit;width:100%;resize:vertical}
+.kolomAngka{display:grid;grid-template-columns:repeat(4,minmax(90px,1fr));gap:8px}
 section.lembar.aktif{display:block}
 
 /* keterangan */
@@ -84,6 +89,7 @@ tr.rinci li{margin:2px 0}
 <nav class="tab">
   <button class="aktif" data-lembar="sumber">Sumber Data</button>
   <button data-lembar="folder">1. Folder Produk</button>
+  <button data-lembar="atur">Pengaturan Produk</button>
   <button data-lembar="siap">2. Cek Kesiapan</button>
   <button data-lembar="pratinjau">3. Pratinjau</button>
   <button data-lembar="ekspor">4. Export Mass Upload</button>
@@ -243,6 +249,48 @@ tr.rinci li{margin:2px 0}
           </div>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------ PENGATURAN -->
+<section class="lembar" id="lembar-atur">
+  <div class="kartu">
+    <h2>Harga, berat, dan spesifikasi per jenis produk</h2>
+    <div class="isi"><div id="aturJenis"></div></div>
+  </div>
+
+  <div class="kartu" style="margin-top:14px">
+    <h2>Judul &amp; deskripsi</h2>
+    <div class="isi">
+      <div class="baris">
+        <span class="kecil redup">Toko</span>
+        <select id="aturToko" onchange="muatTeks()" class="pilihan"></select>
+        <span class="kecil redup" style="margin-left:10px">Jenis produk</span>
+        <select id="aturJenisTeks" onchange="muatTeks()" class="pilihan"></select>
+        <span class="kecil redup" id="profilAktif"></span>
+      </div>
+      <div id="aturTeks" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <div class="baris" style="margin-top:14px">
+    <button class="utama" onclick="simpanPengaturan()">Simpan semua perubahan</button>
+    <button onclick="muatPengaturan()">Batalkan, muat ulang</button>
+    <span id="statusAtur" class="kecil"></span>
+  </div>
+
+  <div class="kartu" style="margin-top:14px">
+    <div class="isi arti">
+      Semua nilai di sini tersimpan di <code>tools/config.json</code> — itu satu-satunya
+      sumbernya, jadi hasil <b>Pratinjau</b> dan <b>Export</b> langsung ikut berubah.
+      <br><br><b>Harga paket</b> adalah harga untuk satu kali pembelian minimum. Harga per
+      pcs yang masuk ke Shopee dihitung otomatis: harga paket ÷ min. order.
+      <br><br>Di deskripsi, <code>{TOKO}</code> diganti nama toko dan <code>{SPEC}</code>
+      diganti blok spesifikasi jenis produk itu. Jadi cukup ubah spesifikasi sekali, semua
+      deskripsi yang memakainya ikut berubah.
+      <br><br>Tiap jenis punya 3 pasang awalan/akhiran judul yang dipakai bergantian antar
+      seri, supaya judul antar listing tidak kembar.
     </div>
   </div>
 </section>
@@ -503,6 +551,124 @@ function pasangTemplate(){
   api('/api/template',{}).then(r=>{
     if(r.batal)return;
     if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
+  });
+}
+
+let ATUR=null;
+
+function muatPengaturan(){
+  api('/api/pengaturan',{}).then(d=>{
+    ATUR=d;
+    $('#aturJenis').innerHTML=Object.entries(d.jenis).map(([nama,j])=>`
+      <div style="border:1px solid var(--garis);border-radius:8px;padding:12px;margin-bottom:10px">
+        <div class="baris" style="margin-bottom:8px">
+          <b>${nama}</b>
+          <span class="redup kecil">${j.kategori.split('/').slice(-1)[0]}</span>
+          <div style="flex:1"></div>
+          <span class="redup kecil" id="hargaPcs-${nama}"></span>
+        </div>
+        <div class="kolomAngka">
+          <label class="kecil redup">Harga paket (Rp)
+            <input type="text" data-j="${nama}" data-k="harga_paket" value="${j.harga_paket}"
+                   oninput="hitungHarga('${nama}')"></label>
+          <label class="kecil redup">Min. order (pcs)
+            <input type="text" data-j="${nama}" data-k="min_order" value="${j.min_order}"
+                   oninput="hitungHarga('${nama}')"></label>
+          <label class="kecil redup">Berat (gram)
+            <input type="text" data-j="${nama}" data-k="berat_gram" value="${j.berat_gram}"></label>
+          <label class="kecil redup">Stok
+            <input type="text" data-j="${nama}" data-k="stok" value="${j.stok}"></label>
+        </div>
+        <div class="kecil redup" style="margin-top:10px">Spesifikasi — muncul di deskripsi
+          menggantikan <code>{SPEC}</code></div>
+        <textarea rows="6" data-j="${nama}" data-k="spec">${j.spec}</textarea>
+      </div>`).join('');
+    Object.keys(d.jenis).forEach(hitungHarga);
+    $('#aturToko').innerHTML=d.toko.map(t=>`<option value="${t.nama}">${t.nama}</option>`).join('');
+    $('#aturJenisTeks').innerHTML=Object.keys(d.jenis).map(j=>`<option>${j}</option>`).join('');
+    muatTeks();
+    $('#statusAtur').textContent='';
+  });
+}
+
+function hitungHarga(nama){
+  const g=k=>document.querySelector(`[data-j="${nama}"][data-k="${k}"]`).value.replace(/\D/g,'');
+  const p=+g('harga_paket'), m=+g('min_order');
+  const el=$('#hargaPcs-'+nama);
+  if(!p||!m){el.textContent='';return;}
+  const pcs=Math.round(p/m);
+  el.innerHTML=`harga per pcs: <b style="color:${pcs>=99?'var(--hijau)':'var(--merah)'}">`
+    +`Rp${pcs.toLocaleString('id')}</b>`;
+}
+
+function profilToko(nama){
+  const t=(ATUR.toko||[]).find(x=>x.nama===nama);
+  return t?t.profil:null;
+}
+
+function muatTeks(){
+  if(!ATUR)return;
+  const toko=$('#aturToko').value, jenis=$('#aturJenisTeks').value;
+  const profil=profilToko(toko);
+  if(!profil||!ATUR.profil[profil])return;
+  $('#profilAktif').textContent='profil gaya: '+profil
+    +' — dipakai bersama oleh toko lain yang memakai profil sama';
+  const desk=ATUR.profil[profil].deskripsi[jenis]||'';
+  const judul=ATUR.profil[profil].judul[jenis]||[];
+  $('#aturTeks').innerHTML=`
+    <div class="kecil redup">Awalan &amp; akhiran judul — dipakai bergantian antar seri</div>
+    ${judul.map((p,i)=>`<div class="baris" style="margin:6px 0">
+      <input type="text" class="judulAwal" value="${p[0].replace(/"/g,'&quot;')}"
+             placeholder="awalan" style="flex:1">
+      <span class="redup">—</span>
+      <input type="text" class="judulAkhir" value="${p[1].replace(/"/g,'&quot;')}"
+             placeholder="akhiran" style="flex:1"></div>`).join('')}
+    <div class="kecil redup" style="margin-top:12px">Deskripsi —
+      <code>{TOKO}</code> jadi nama toko, <code>{SPEC}</code> jadi blok spesifikasi
+      <span id="hitungDesk"></span></div>
+    <textarea id="teksDeskripsi" rows="14" oninput="hitungDesk()">${desk}</textarea>
+    <details style="margin-top:8px"><summary class="kecil redup" style="cursor:pointer">
+      lihat hasil jadinya untuk ${toko}</summary>
+      <div id="hasilDesk" class="kecil" style="white-space:pre-wrap;margin-top:8px;
+           color:#c9ccd1;background:#1b1d21;padding:10px;border-radius:6px"></div></details>`;
+  $('#aturTeks').querySelector('details').ontoggle=hitungDesk;
+  hitungDesk();
+}
+
+function hitungDesk(){
+  const toko=$('#aturToko').value, jenis=$('#aturJenisTeks').value;
+  const spec=document.querySelector(`textarea[data-j="${jenis}"][data-k="spec"]`);
+  const jadi=($('#teksDeskripsi').value||'')
+    .replace('{SPEC}',spec?spec.value:'').replace(/\{TOKO\}/g,toko);
+  const [a,b]=ATUR.batas.deskripsi;
+  const baik=jadi.length>=a&&jadi.length<=b;
+  $('#hitungDesk').innerHTML=`· jadi <b style="color:${baik?'var(--hijau)':'var(--merah)'}">`
+    +`${jadi.length}</b> karakter (batas ${a}–${b})`;
+  const h=$('#hasilDesk'); if(h)h.textContent=jadi;
+}
+
+function simpanPengaturan(){
+  const jenis={};
+  document.querySelectorAll('#aturJenis [data-j]').forEach(el=>{
+    (jenis[el.dataset.j]=jenis[el.dataset.j]||{})[el.dataset.k]=el.value;
+  });
+  const toko=$('#aturToko').value, jn=$('#aturJenisTeks').value, profil=profilToko(toko);
+  const awal=[...document.querySelectorAll('.judulAwal')].map(e=>e.value.trim());
+  const akhir=[...document.querySelectorAll('.judulAkhir')].map(e=>e.value.trim());
+  const badan={jenis:jenis,profil:{}};
+  badan.profil[profil]={
+    deskripsi:{[jn]:$('#teksDeskripsi').value},
+    judul:{[jn]:awal.map((a,i)=>[a,akhir[i]||''])},
+  };
+  $('#statusAtur').textContent='menyimpan…';
+  api('/api/simpan_pengaturan',badan).then(r=>{
+    if(r.ok){
+      $('#statusAtur').innerHTML='<span style="color:var(--hijau)">tersimpan</span>';
+      muatPengaturan(); muatStatus();
+    }else{
+      $('#statusAtur').innerHTML='<span style="color:var(--merah)">gagal: '
+        +r.galat.join(' · ')+'</span>';
+    }
   });
 }
 
@@ -768,5 +934,5 @@ setInterval(()=>{
   }).catch(()=>{});
 },700);
 
-muatStatus(); muatPohon(); gambarBilah();
+muatStatus(); muatPohon(); gambarBilah(); muatPengaturan();
 </script></body></html>
