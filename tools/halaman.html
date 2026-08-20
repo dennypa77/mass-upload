@@ -182,10 +182,26 @@ tr.rinci li{margin:2px 0}
         <h2>Daftar SKU</h2>
         <div class="isi">
           <div id="statusSku" class="kecil"></div>
+          <div class="kecil redup" style="margin:10px 0 4px">
+            Tempel langsung dari Google Sheet — sorot kolomnya di Sheets, salin, lalu
+            tempel di sini. Cukup kolom <b>SKU</b> dan <b>Nama Produk</b>.
+          </div>
+          <textarea id="tempelSku" rows="6" oninput="intipTempel()"
+            placeholder="JB-0000001&#9;JIBBITZ CROCS AKRILIK CUSTOM KPOP - CORTIS SERIES&#10;JB-0000002&#9;JIBBITZ CROCS AKRILIK CUSTOM KPOP - CORTIS SERIES"></textarea>
+          <div class="baris" style="margin-top:8px">
+            <span id="intipSku" class="kecil redup"></span>
+            <div style="flex:1"></div>
+            <label class="centang kecil"><input type="radio" name="modeSku" value="gabung"
+              checked> tambah / perbarui</label>
+            <label class="centang kecil"><input type="radio" name="modeSku" value="ganti">
+              ganti semua</label>
+            <button class="utama" onclick="simpanTempel()">Simpan SKU</button>
+          </div>
           <div class="baris" style="margin-top:10px">
-            <button class="utama" onclick="imporSku()">Impor SKU dari Excel…</button>
+            <button onclick="imporSku()">Impor dari berkas Excel…</button>
             <span id="pesanSku" class="kecil redup"></span>
           </div>
+          <div id="ringkasSku" style="margin-top:10px"></div>
           <div class="arti">
             Di Google Sheet: <b>File → Download → Microsoft Excel (.xlsx)</b>, lalu pilih
             berkasnya di sini. Format <code>.xlsx</code> lebih baik daripada CSV karena
@@ -261,7 +277,7 @@ tr.rinci li{margin:2px 0}
   </div>
 
   <div class="kartu" style="margin-top:14px">
-    <h2>Judul &amp; deskripsi</h2>
+    <h2>Judul &amp; deskripsi lengkap — per toko</h2>
     <div class="isi">
       <div class="baris">
         <span class="kecil redup">Toko</span>
@@ -477,6 +493,45 @@ function simpanSumber(){
 }
 function simpanUrl(){ api('/api/config',{base_url:$('#baseurl').value}).then(muatStatus); }
 
+function intipTempel(){
+  const teks=$('#tempelSku').value;
+  if(!teks.trim()){$('#intipSku').textContent='';return;}
+  api('/api/tempel_sku',{teks:teks,intip:true}).then(d=>{
+    if(!d.jumlah){$('#intipSku').innerHTML=
+      '<span style="color:var(--merah)">tidak ada SKU terbaca</span>';return;}
+    const c=d.contoh[0];
+    $('#intipSku').innerHTML=`<b style="color:var(--hijau)">${d.jumlah} SKU terbaca</b>`
+      +` <span class="redup">· contoh: ${c.sku} — ${c.seri.slice(0,46)}</span>`;
+  });
+}
+
+function simpanTempel(){
+  const teks=$('#tempelSku').value;
+  if(!teks.trim()){alert('Tempel dulu datanya.');return;}
+  const gabung=document.querySelector('input[name=modeSku]:checked').value==='gabung';
+  if(!gabung&&!confirm('Ganti seluruh daftar SKU dengan yang ditempel?\n'
+    +'Yang lama dicadangkan ke data/sku.csv.bak'))return;
+  api('/api/tempel_sku',{teks:teks,gabung:gabung}).then(r=>{
+    if(!r.ok){alert(r.pesan||'gagal');return;}
+    $('#intipSku').innerHTML=`<span style="color:var(--hijau)">tersimpan: ${r.baru} baru, `
+      +`${r.diperbarui} diperbarui, total ${r.total} SKU</span>`;
+    $('#tempelSku').value='';
+    muatStatus(); muatRingkasSku(); muatPohon();
+  });
+}
+
+function muatRingkasSku(){
+  api('/api/ringkas_sku',{}).then(d=>{
+    if(!d.seri.length){$('#ringkasSku').innerHTML='';return;}
+    $('#ringkasSku').innerHTML='<table><thead><tr><th>Jenis</th><th>Seri</th>'
+      +'<th>SKU</th><th>Rentang</th></tr></thead><tbody>'
+      +d.seri.map(s=>`<tr><td class="kecil">${s.jenis}</td>
+        <td class="kecil">${s.seri}</td><td class="angka">${s.sku}</td>
+        <td class="kecil redup">${s.awal} – ${s.akhir}</td></tr>`).join('')
+      +'</tbody></table>';
+  });
+}
+
 function imporSku(){
   $('#pesanSku').textContent='menunggu dialog…';
   api('/api/pilih_berkas',{}).then(r=>{
@@ -623,10 +678,14 @@ function muatTeks(){
       <span class="redup">—</span>
       <input type="text" class="judulAkhir" value="${p[1].replace(/"/g,'&quot;')}"
              placeholder="akhiran" style="flex:1"></div>`).join('')}
-    <div class="kecil redup" style="margin-top:12px">Deskripsi —
-      <code>{TOKO}</code> jadi nama toko, <code>{SPEC}</code> jadi blok spesifikasi
-      <span id="hitungDesk"></span></div>
-    <textarea id="teksDeskripsi" rows="14" oninput="hitungDesk()">${desk}</textarea>
+    <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--garis)">
+      <b>Deskripsi lengkap produk</b>
+      <div class="kecil redup">Seluruh teks yang tampil di halaman produk Shopee.
+        <code>{TOKO}</code> diganti nama toko, <code>{SPEC}</code> diganti blok
+        spesifikasi. <span id="hitungDesk"></span></div>
+    </div>
+    <textarea id="teksDeskripsi" rows="18" oninput="hitungDesk()"
+      style="margin-top:6px">${desk}</textarea>
     <details style="margin-top:8px"><summary class="kecil redup" style="cursor:pointer">
       lihat hasil jadinya untuk ${toko}</summary>
       <div id="hasilDesk" class="kecil" style="white-space:pre-wrap;margin-top:8px;
@@ -934,5 +993,5 @@ setInterval(()=>{
   }).catch(()=>{});
 },700);
 
-muatStatus(); muatPohon(); gambarBilah(); muatPengaturan();
+muatStatus(); muatPohon(); gambarBilah(); muatPengaturan(); muatRingkasSku();
 </script></body></html>

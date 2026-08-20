@@ -449,6 +449,27 @@ class Penangan(BaseHTTPRequestHandler):
                     return self._kirim({'batal': True})
                 return self._kirim({'mulai': di_latar(
                     'pasang template', lambda: inti.pasang_template(cfg, berkas))})
+            if self.path == '/api/tempel_sku':
+                catatan = inti.baca_tempelan(badan.get('teks') or '')
+                if badan.get('intip'):
+                    contoh = catatan[:5]
+                    return self._kirim({'jumlah': len(catatan), 'contoh': contoh})
+                hasil = inti.tulis_sku(cfg, catatan, gabung=badan.get('gabung', True))
+                if hasil.get('ok'):
+                    catat('[sku] {} baru, {} diperbarui, {} dilewati -> total {} SKU'.format(
+                        hasil['baru'], hasil['diperbarui'], hasil['dilewati'], hasil['total']))
+                    SINGGAHAN.clear()
+                    simpan_cache()
+                return self._kirim(hasil)
+            if self.path == '/api/ringkas_sku':
+                try:
+                    data = inti.baca_sku()
+                except SystemExit:
+                    return self._kirim({'seri': []})
+                return self._kirim({'seri': [
+                    {'jenis': j, 'seri': s, 'sku': len(d),
+                     'awal': d[0]['sku'], 'akhir': d[-1]['sku']}
+                    for j, m in data.items() for s, d in m.items()]})
             if self.path == '/api/pengaturan':
                 return self._kirim(baca_pengaturan(cfg))
             if self.path == '/api/simpan_pengaturan':

@@ -370,7 +370,33 @@ Alur uji yang disarankan: `url` untuk satu seri → push folder fotonya → buka
 di browser untuk memastikan jsDelivr sudah melayaninya → `build` → upload satu berkas Excel
 ke Shopee → cek fotonya muncul. Kalau beres, baru lanjut ke sisanya.
 
-## Mengisi `data/sku.csv` dari Google Sheet
+## Mengisi daftar SKU — tempel langsung dari Google Sheet
+
+Cara tercepat, tanpa ekspor berkas: di Google Sheet sorot kolom **SKU** dan **Nama Produk**,
+salin, lalu tempel ke kotak di tab **Sumber Data → Daftar SKU**. Jumlah SKU yang terbaca
+langsung tampil sambil Anda menempel.
+
+Yang dibutuhkan cuma dua kolom:
+
+| Kolom | Untuk apa |
+|---|---|
+| **SKU** | jadi kode variasi sekaligus nama varian; jenis produk ditebak dari awalannya (`JB-`/`PA-`/`PB-`) |
+| **Nama Produk** | jadi nama seri, dipakai sebagai bagian tengah judul listing |
+
+Kolom lain (No. Produk, Bentuk, Varian, QC, …) boleh ikut tersalin — diabaikan. Baris judul
+juga boleh ikut; kalau tidak ada, kolom SKU dikenali dari polanya dan nama produk dari kolom
+teks terpanjang. Menerima hasil salin dari Sheets (dipisah tab) maupun CSV.
+
+Dua pilihan simpan:
+
+- **tambah / perbarui** — data lama tetap, SKU yang sama diperbarui. Cocok untuk menambah
+  seri baru sedikit demi sedikit
+- **ganti semua** — daftar lama dibuang seluruhnya
+
+Berkas lama selalu dicadangkan ke `data/sku.csv.bak`. Di bawah kotak tempel ada ringkasan
+seri yang sudah terdaftar beserta rentang nomornya.
+
+## Alternatif: impor dari berkas Excel
 
 Di Google Sheet SKU: **File → Download → Microsoft Excel (.xlsx)**, lalu:
 
