@@ -250,5 +250,7 @@
   "abaikan_sku": [
     "-CUSTOM"
   ],
-  "_abaikan_sku": "Pola SKU yang tidak ikut mass upload (dicocokkan sebagai regex, tanpa peka huruf besar)."
+  "_abaikan_sku": "Pola SKU yang tidak ikut mass upload (dicocokkan sebagai regex, tanpa peka huruf besar).",
+  "salinan_serentak": 8,
+  "_salinan_serentak": "Berapa foto disalin bersamaan dari Drive. Naikkan kalau koneksi cepat, turunkan kalau berat."
 }

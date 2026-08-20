@@ -10,12 +10,14 @@ kiriman besar dengan galat HTTP 408, jadi tiap bagian dibatasi ukurannya dan
 dikirim satu per satu — kalau satu bagian gagal, bagian yang sudah terkirim
 tetap tercatat dan proses bisa dilanjutkan tanpa mengulang dari awal.
 """
-import os, re, subprocess, sys
+import os, re, subprocess, sys, threading
+from concurrent.futures import ThreadPoolExecutor
 
 import gudang
 
 BATAS_KIRIM = 40 * 1024 * 1024      # ukuran maks. satu commit sebelum di-push
 COBA_ULANG = 3
+SALINAN_SERENTAK = 8                # berapa foto disalin bersamaan dari Drive
 
 
 def _git(akar, argumen, cetak=None, masukan=None):
@@ -144,8 +146,22 @@ def _mb(byte):
     return byte / 1024 ** 2
 
 
-def proses(inti, cfg, folder, push=True, lapor=None):
-    """lapor(tahap, selesai, total) dipanggil untuk memperbarui progress bar."""
+def _sudah_tersalin(sumber, tujuan):
+    """Benar kalau salinan di foto-upload sudah ada dan tidak lebih tua dari sumbernya."""
+    try:
+        if not os.path.exists(tujuan) or os.path.getsize(tujuan) == 0:
+            return False
+        return os.path.getmtime(tujuan) >= os.path.getmtime(sumber) - 2
+    except OSError:
+        return False
+
+
+def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
+    """Proses satu folder produk.
+
+    lapor(tahap, selesai, total) dipanggil untuk memperbarui progress bar.
+    paksa=True menyalin ulang walau berkasnya sudah ada di foto-upload.
+    """
     def maju(tahap, n, total):
         if lapor:
             lapor(tahap, n, total)
@@ -169,23 +185,43 @@ def proses(inti, cfg, folder, push=True, lapor=None):
         print('     Jalankan "Impor SKU" dulu supaya foto ini masuk ke listing yang benar.')
 
     # ---------------------------------------------------------------- 1. salin
-    print('[1/3] menyalin & rename ke foto-upload/ …')
-    dikecilkan = 0
-    for i, t in enumerate(temuan, 1):
+    # Foto di Google Drive bersifat streaming: isinya baru diunduh saat berkasnya
+    # dibuka. Menyalin beberapa sekaligus jauh lebih cepat karena waktu tunggu
+    # jaringan bisa saling menutupi. Berkas yang sudah pernah disalin dilewati,
+    # jadi menjalankan ulang tidak mengunduh apa pun lagi.
+    serentak = int(cfg.get('salinan_serentak') or SALINAN_SERENTAK)
+    print('[1/3] menyalin & rename ke foto-upload/ ({} berkas sekaligus) …'.format(serentak))
+    hitung = {'selesai': 0, 'kecil': 0, 'lewat': 0}
+    kunci = threading.Lock()
+
+    def kerjakan(t):
         tujuan = os.path.join(inti.DIR_FOTO, t['toko'], t['slug'])
         os.makedirs(tujuan, exist_ok=True)
         akhir = os.path.join(tujuan, t['nama_tujuan'])
-        if inti.salin_muat(t['sumber'], akhir):
-            dikecilkan += 1
         t['file_lokal'] = akhir
-        t['ukuran'] = os.path.getsize(akhir)
-        maju('salin', i, len(temuan))
-        if i % 25 == 0 or i == len(temuan):
-            print('      {}/{} foto ({:.0f} MB)'.format(
-                i, len(temuan), _mb(sum(x.get('ukuran', 0) for x in temuan[:i]))))
+        if not paksa and _sudah_tersalin(t['sumber'], akhir):
+            t['ukuran'] = os.path.getsize(akhir)
+            with kunci:
+                hitung['lewat'] += 1
+        else:
+            kecil = inti.salin_muat(t['sumber'], akhir)
+            t['ukuran'] = os.path.getsize(akhir)
+            with kunci:
+                if kecil:
+                    hitung['kecil'] += 1
+        with kunci:
+            hitung['selesai'] += 1
+            n = hitung['selesai']
+        maju('salin', n, len(temuan))
+        if n % 25 == 0 or n == len(temuan):
+            print('      {}/{} foto'.format(n, len(temuan)))
+
+    with ThreadPoolExecutor(max_workers=serentak) as kolam:
+        list(kolam.map(kerjakan, temuan))
+
     total_mb = _mb(sum(t['ukuran'] for t in temuan))
-    print('[1/3] selesai — {} foto, {:.1f} MB, {} dikecilkan agar di bawah 2 MB'.format(
-        len(temuan), total_mb, dikecilkan))
+    print('[1/3] selesai — {} foto, {:.1f} MB, {} dikecilkan, {} dilewati '
+          '(sudah tersalin)'.format(len(temuan), total_mb, hitung['kecil'], hitung['lewat']))
 
     # ---------------------------------------------------------------- 2. database
     base = (cfg['foto'].get('base_url') or '').rstrip('/')
