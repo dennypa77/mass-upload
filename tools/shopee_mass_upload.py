@@ -100,6 +100,20 @@ def baca_sku():
     return data
 
 
+def dir_jenis(cfg, jenis):
+    """Folder sumber di komputer ini untuk satu jenis produk.
+
+    Dipakai "path_drive" kalau diisi (boleh drive/komputer mana saja). Kalau
+    kosong, dirakit dari foto.root + folder_drive seperti pengaturan lama.
+    """
+    j = cfg['jenis'][jenis]
+    khusus = (j.get('path_drive') or '').strip()
+    if khusus:
+        return os.path.normpath(khusus)
+    akar = (cfg.get('foto', {}).get('root') or '').strip()
+    return os.path.normpath(os.path.join(akar, j.get('folder_drive') or jenis))
+
+
 def kode_seri(nama_seri):
     """'... KPOP - CORTIS SERIES' -> 'CORTIS'"""
     ekor = nama_seri.split(' - ')[-1]
@@ -227,11 +241,11 @@ def perintah_foto(cfg, data):
 
     for jenis, seri_map in data.items():
         j = cfg['jenis'][jenis]
-        dir_jenis = os.path.join(fcfg['root'], j['folder_drive'])
+        dir_produk = dir_jenis(cfg, jenis)
         pre = j['prefix_sku']
         for seri, desain in seri_map.items():
             nomor = next((nomor_sku(d['sku']) for d in desain if nomor_sku(d['sku'])), None)
-            folder = cari_folder_seri(dir_jenis, nomor) if nomor else None
+            folder = cari_folder_seri(dir_produk, nomor) if nomor else None
             dir_fp = os.path.join(folder, fcfg['subfolder']) if folder else None
             if not dir_fp or not os.path.isdir(dir_fp):
                 tak_ketemu.append('{} / {}'.format(jenis, seri))
