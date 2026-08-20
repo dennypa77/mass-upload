@@ -263,17 +263,24 @@ namanya sudah SKU, jadi dibiarkan.
 
 ## Foto tambahan per toko (panduan ukuran)
 
-Satu foto per toko yang dipakai sebagai **Foto Produk 3** di semua listing toko itu —
+Foto milik toko yang mengisi **Foto Produk 3 dan seterusnya** di semua listing toko itu —
 biasanya panduan ukuran atau spesifikasi bahan. Dipasang lewat tab **Sumber Data → Foto
 tambahan per toko**.
 
-Kalau fotonya berlaku untuk seluruh produk, pilih **semua jenis**. Kalau fotonya menyebut
-produk tertentu, pasang per jenis — yang khusus mengalahkan yang umum. Disimpan di
-`foto-upload/<toko>/umum/TAMBAHAN.png` (atau `TAMBAHAN-<JENIS>.png`).
+**Boleh lebih dari satu.** Saat memilih berkas bisa disorot beberapa sekaligus. Shopee
+menampung sampai Foto Produk 8, jadi tersedia 6 slot setelah sampul + 2 foto utama.
+Urutannya mengikuti nomor namanya.
+
+Kalau fotonya berlaku untuk seluruh produk, pilih **semua jenis** (`TAMBAHAN-U1`, `-U2`, …).
+Kalau fotonya menyebut produk tertentu, pasang per jenis (`TAMBAHAN-JIBBITZ-1`, …) — yang
+khusus mengalahkan yang umum. Tanda × di sebelah nama foto menghapusnya, termasuk dari
+GitHub. Disimpan di `foto-upload/<toko>/umum/`.
 
 ## Nama varian dan SKU induk
 
 - **Nama varian** memakai kode SKU-nya langsung (`JB-0000001`), bukan `Desain 01`
+- **SKU tertentu bisa dikecualikan** lewat `config.json` → `abaikan_sku`. Bawaannya
+  `["-CUSTOM"]`, jadi varian custom tidak ikut mass upload dan diupload manual
 - **SKU induk** memakai SKU pertama produk itu, mengikuti penomoran di sheet
 - **Kode Integrasi Variasi** tetap kode gabungan toko + jenis + seri (`GK-JB-CORTIS`),
   karena kolom itu hanya perlu unik per produk

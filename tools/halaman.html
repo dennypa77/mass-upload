@@ -198,8 +198,10 @@ tr.rinci li{margin:2px 0}
         <div class="isi">
           <div id="daftarTambahan"></div>
           <div class="arti">
-            Satu foto per toko yang dipakai sebagai <b>Foto Produk 3</b> di semua listing
-            toko itu — biasanya panduan ukuran atau spesifikasi bahan.
+            Foto milik toko yang dipakai sebagai <b>Foto Produk 3 dan seterusnya</b> di
+            semua listing toko itu — biasanya panduan ukuran atau spesifikasi bahan.
+            Boleh lebih dari satu; saat memilih berkas bisa disorot beberapa sekaligus.
+            Shopee menampung sampai Foto Produk 8, jadi tersedia 6 slot.
             <br><br>Pilih “semua jenis” kalau fotonya berlaku untuk seluruh produk. Kalau
             fotonya menyebut produk tertentu, pasang per jenis — yang khusus mengalahkan
             yang umum.
@@ -445,7 +447,10 @@ function gambarTambahan(daftarToko,terpasang,jenisProduk){
     const punya=perToko[tk.folder_foto]||[];
     const isi=punya.length
       ? punya.map(p=>`<span class="tanda ${p.diunggah?'t-siap':'t-baru'}"
-          title="${p.url||''}">${p.jenis||'semua jenis'}${p.diunggah?'':' (belum diupload)'}</span>`).join(' ')
+          title="${p.url||''}">${p.kunci}${p.jenis?' · '+p.jenis:''}${p.diunggah?'':' (belum diupload)'}
+          <a href="#" onclick="hapusTambahan('${tk.folder_foto}','${p.kunci}');return false"
+             style="color:inherit;text-decoration:none;margin-left:4px"
+             title="hapus foto ini">&times;</a></span>`).join(' ')
       : '<span class="redup kecil">belum ada</span>';
     return `<div class="baris" style="margin-bottom:8px">
       <span style="width:96px" class="kecil"><b>${tk.nama}</b></span>
@@ -456,9 +461,16 @@ function gambarTambahan(daftarToko,terpasang,jenisProduk){
         <option value="">semua jenis</option>
         ${jenisProduk.map(j=>`<option value="${j}">${j}</option>`).join('')}
       </select>
-      <button onclick="pasangTambahan('${tk.folder_foto}')">Pilih foto…</button>
+      <button onclick="pasangTambahan('${tk.folder_foto}')">Tambah foto…</button>
     </div>`;
   }).join('');
+}
+
+function hapusTambahan(toko,kunci){
+  if(!confirm('Hapus foto tambahan '+kunci+'?\nBerkas ikut dihapus dari GitHub.'))return;
+  api('/api/hapus_tambahan',{toko:toko,kunci:kunci}).then(r=>{
+    if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
+  });
 }
 
 function pasangTambahan(toko){

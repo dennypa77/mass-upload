@@ -246,5 +246,9 @@
         "JIBBITZ": "Jibbitz {TOKO} bikin sandal kamu auto viral! Cocok untuk fans anime, K-pop, game, dan pop culture. Charm akrilik glossy, warna pop, detail tajam, collectible banget. Pasang di crocs, clog, atau sandal berlubang - tekan sekali, langsung nempel kuat. Mix & match sesuai fandom dan mood kamu, bikin sandal biasa jadi statement.\n\n{SPEC}\n\nCheckout sekarang sebelum sold out! Dikemas rapi, aman, pengiriman cepat. Kalau suka, kasih bintang lima ya - biar koleksi charm hits terus hadir. Selamat berbelanja & tampil beda dengan style Gen Z maksimal!"
       }
     }
-  }
+  },
+  "abaikan_sku": [
+    "-CUSTOM"
+  ],
+  "_abaikan_sku": "Pola SKU yang tidak ikut mass upload (dicocokkan sebagai regex, tanpa peka huruf besar)."
 }

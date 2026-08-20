@@ -244,11 +244,14 @@ def dialog_folder(awal=''):
     return (hasil.stdout or '').strip()
 
 
-def dialog_berkas(judul=''):
+def dialog_berkas(judul='', gambar=False):
     """Dialog pilih berkas (.xlsx/.csv) untuk impor SKU atau pasang template."""
     skrip = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pilih_folder.py')
-    hasil = subprocess.run([sys.executable, skrip, '', '--berkas', judul],
-                           capture_output=True, text=True, timeout=300)
+    argumen = [sys.executable, skrip, '', '--berkas']
+    if gambar:
+        argumen.append('--gambar')
+    argumen.append(judul)
+    hasil = subprocess.run(argumen, capture_output=True, text=True, timeout=300)
     return (hasil.stdout or '').strip()
 
 
@@ -352,14 +355,21 @@ class Penangan(BaseHTTPRequestHandler):
                 jalur = dialog_folder(badan.get('awal') or '')
                 return self._kirim({'path': jalur})
             if self.path == '/api/tambahan':
-                berkas = dialog_berkas('Pilih foto tambahan (panduan ukuran)')
+                berkas = dialog_berkas('Pilih foto tambahan (boleh lebih dari satu)',
+                                       gambar=True)
                 if not berkas:
                     return self._kirim({'batal': True})
+                daftar = [b for b in berkas.split('\n') if b.strip()]
                 toko = badan.get('toko')
                 jenis = badan.get('jenis') or None
                 return self._kirim({'mulai': di_latar(
                     'foto tambahan', lambda: modul_unggah.pasang_foto_tambahan(
-                        inti, cfg, toko, berkas, jenis, push=True))})
+                        inti, cfg, toko, daftar, jenis, push=True))})
+            if self.path == '/api/hapus_tambahan':
+                toko, kunci = badan.get('toko'), badan.get('kunci')
+                return self._kirim({'mulai': di_latar(
+                    'hapus foto tambahan', lambda: modul_unggah.hapus_foto_tambahan(
+                        inti, cfg, toko, kunci, push=True))})
             if self.path == '/api/template':
                 berkas = dialog_berkas('Pilih template Shopee yang baru diunduh')
                 if not berkas:
