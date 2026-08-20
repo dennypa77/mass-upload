@@ -74,9 +74,18 @@ def baca_config():
 
 
 def baca_sku():
-    """Baca data/sku.csv -> {jenis: OrderedDict{seri: [ {varian, sku}, ... ]}}"""
+    """Baca data/sku.csv -> {jenis: OrderedDict{seri: [ {varian, sku}, ... ]}}
+
+    SKU yang cocok dengan pola di config.json -> abaikan_sku dilewati. Bawaannya
+    varian CUSTOM, yang diupload manual dan tidak ikut mass upload.
+    """
     if not os.path.exists(SKU_CSV):
         sys.exit('File input tidak ada: {}\nBuat dulu dengan kolom: jenis,seri,varian,sku'.format(SKU_CSV))
+    try:
+        pola = baca_config().get('abaikan_sku') or []
+    except Exception:
+        pola = []
+    dilewati = 0
     data = OrderedDict()
     with open(SKU_CSV, encoding='utf-8-sig', newline='') as f:
         for i, baris in enumerate(csv.DictReader(f), start=2):
@@ -86,6 +95,9 @@ def baca_sku():
             for wajib in ('jenis', 'seri', 'varian'):
                 if not baris.get(wajib):
                     sys.exit('sku.csv baris {}: kolom "{}" kosong'.format(i, wajib))
+            if any(re.search(x, baris['sku'], re.I) for x in pola):
+                dilewati += 1
+                continue
             kode = baris.get('kode_seri') or kode_seri(baris['seri'])
             if not cocok(baris['jenis'], 'jenis'):
                 continue
@@ -94,10 +106,16 @@ def baca_sku():
             data.setdefault(baris['jenis'].upper(), OrderedDict()) \
                 .setdefault(baris['seri'], []).append(
                     {'varian': baris['varian'], 'sku': baris['sku'], 'kode_seri': kode})
+    if dilewati and not baca_sku._diam:
+        print('[input] {} SKU dilewati sesuai abaikan_sku di config.json'.format(dilewati))
+        baca_sku._diam = True
     if not data:
         sys.exit('Tidak ada SKU yang cocok dengan saringan: {}'.format(
             {k: v for k, v in SARING.items() if v}))
     return data
+
+
+baca_sku._diam = False
 
 
 DIR_TEMPLATE = os.path.join(AKAR, 'template')
@@ -603,6 +621,19 @@ def atribut_wajib(wb, kategori):
     return {}
 
 
+def kunci_tambahan(punya, slug):
+    """Kunci foto tambahan milik satu toko, urut, untuk satu jenis produk.
+
+    Yang khusus jenis itu (TAMBAHAN-JIBBITZ-1, -2, ...) didahulukan. Kalau tidak
+    ada, dipakai yang berlaku umum (TAMBAHAN-U1, -U2, ... dan "TAMBAHAN" lama).
+    """
+    khusus = sorted(k for k in punya if k.startswith('TAMBAHAN-' + slug.upper() + '-'))
+    if khusus:
+        return khusus
+    return sorted(k for k in punya
+                  if k == 'TAMBAHAN' or re.match(r'^TAMBAHAN-U\d+$', k))
+
+
 def susun_listing(cfg, data, toko, jenis, manifest, dari_db=None):
     """Bangun daftar listing untuk satu toko + satu jenis produk."""
     j = cfg['jenis'][jenis]
@@ -633,7 +664,7 @@ def susun_listing(cfg, data, toko, jenis, manifest, dari_db=None):
             per_varian = [None] * len(desain)
         # Foto tambahan milik toko (panduan ukuran) dipakai di semua listing.
         # Yang khusus satu jenis produk didahulukan daripada yang berlaku umum.
-        tambahan = url('TAMBAHAN-' + j['slug'].upper()) or url('TAMBAHAN')
+        tambahan = [db_toko[k] for k in kunci_tambahan(db_toko, j['slug'])]
         hasil.append({
             'jenis': jenis,
             'judul': '{} - {} - {}'.format(depan, seri, belakang),
@@ -669,7 +700,12 @@ def tulis_excel(cfg, path_template, path_out, listings):
                 isi(r, 'ps_item_cover_image', L['utama'][0])
                 isi(r, 'ps_item_image_1', L['utama'][1])
                 isi(r, 'ps_item_image_2', L['utama'][2])
-                isi(r, 'ps_item_image_3', L['tambahan'])
+                # foto tambahan mengisi Foto Produk 3 dan seterusnya
+                # (pakai nama sendiri; "n" dipakai loop varian di luar)
+                for slot, tautan in enumerate(L['tambahan'], start=3):
+                    if slot > 8:
+                        break
+                    isi(r, 'ps_item_image_{}'.format(slot), tautan)
             isi(r, 'ps_category', j['kategori'])
             isi(r, 'ps_minimum_purchase_quantity', j['min_order'])
             isi(r, 'et_title_variation_integration_no', L['kode_induk'])

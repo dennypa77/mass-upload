@@ -267,61 +267,107 @@ def proses(inti, cfg, folder, push=True, lapor=None):
         print('   ! dilewati: {}'.format(t))
 
 
-def pasang_foto_tambahan(inti, cfg, folder_toko, berkas, jenis=None, push=True):
-    """Pasang satu foto tambahan (panduan ukuran) untuk sebuah toko.
+def _kunci_berikut(db, folder_toko, slug):
+    """Nomor urut berikutnya untuk foto tambahan toko ini."""
+    awalan = 'TAMBAHAN-' + slug.upper() + '-' if slug else 'TAMBAHAN-U'
+    ada = [r['kunci'] for r in db.execute(
+        "SELECT kunci FROM foto WHERE toko = ? AND tipe = 'tambahan'", (folder_toko,))]
+    nomor = [int(k.rsplit('-', 1)[-1].lstrip('U')) for k in ada
+             if k.startswith(awalan) and k.rsplit('-', 1)[-1].lstrip('U').isdigit()]
+    return awalan + str(max(nomor) + 1 if nomor else 1)
 
-    Foto ini dipakai sebagai Foto Produk 3 di semua listing toko itu. Kalau
-    `jenis` diisi, foto hanya berlaku untuk jenis produk tersebut dan
-    mengalahkan foto tambahan yang berlaku umum.
+
+def pasang_foto_tambahan(inti, cfg, folder_toko, berkas, jenis=None, push=True):
+    """Pasang satu atau beberapa foto tambahan (panduan ukuran) untuk sebuah toko.
+
+    Foto ini mengisi Foto Produk 3 dan seterusnya di semua listing toko itu.
+    `berkas` boleh satu path atau daftar path. Kalau `jenis` diisi, foto hanya
+    berlaku untuk jenis produk tersebut dan mengalahkan yang berlaku umum.
     """
-    if not os.path.exists(berkas):
-        print('[tambahan] berkas tidak ada: {}'.format(berkas))
-        return
+    daftar = [berkas] if isinstance(berkas, str) else list(berkas)
+    daftar = [b for b in daftar if b.strip()]
     nama_toko = {t['folder_foto']: t['nama'] for t in cfg['toko']}
     if folder_toko not in nama_toko:
         print('[tambahan] toko "{}" tidak ada di config.json'.format(folder_toko))
         return
+    hilang = [b for b in daftar if not os.path.exists(b)]
+    if hilang:
+        print('[tambahan] berkas tidak ada: {}'.format(', '.join(hilang)))
+        daftar = [b for b in daftar if b not in hilang]
+    if not daftar:
+        return
 
-    slug = cfg['jenis'][jenis]['slug'].upper() if jenis else None
-    kunci = 'TAMBAHAN-' + slug if slug else 'TAMBAHAN'
-    nama = kunci + '.png'
-    tujuan = os.path.join(inti.DIR_FOTO, folder_toko, 'umum')
-    os.makedirs(tujuan, exist_ok=True)
-    akhir = os.path.join(tujuan, nama)
-    dikecilkan = inti.salin_muat(berkas, akhir)
-
-    path_repo = 'foto-upload/{}/umum/{}'.format(folder_toko, nama)
+    slug = cfg['jenis'][jenis]['slug'] if jenis else None
     base = (cfg['foto'].get('base_url') or '').rstrip('/')
-    baris = [{
-        'toko': folder_toko, 'nama_toko': nama_toko[folder_toko], 'jenis': jenis,
-        'seri': None, 'tipe': 'tambahan', 'kunci': kunci, 'sumber': berkas,
-        'file_lokal': akhir, 'path_repo': path_repo, 'ukuran': os.path.getsize(akhir),
-        'url': base + '/' + path_repo if base else None, 'diunggah': 0,
-    }]
     db = gudang.buka(inti.DB_PATH)
-    gudang.simpan(db, baris)
-    print('[tambahan] {} -> {} ({:.2f} MB{})'.format(
-        nama_toko[folder_toko], path_repo, _mb(baris[0]['ukuran']),
-        ', dikecilkan' if dikecilkan else ''))
-    print('[tambahan] berlaku untuk: {}'.format(jenis or 'semua jenis produk'))
+    baris = []
+    for sumber in daftar:
+        kunci = _kunci_berikut(db, folder_toko, slug)
+        nama = kunci + '.png'
+        tujuan = os.path.join(inti.DIR_FOTO, folder_toko, 'umum')
+        os.makedirs(tujuan, exist_ok=True)
+        akhir = os.path.join(tujuan, nama)
+        kecil = inti.salin_muat(sumber, akhir)
+        path_repo = 'foto-upload/{}/umum/{}'.format(folder_toko, nama)
+        b = {'toko': folder_toko, 'nama_toko': nama_toko[folder_toko], 'jenis': jenis,
+             'seri': None, 'tipe': 'tambahan', 'kunci': kunci, 'sumber': sumber,
+             'file_lokal': akhir, 'path_repo': path_repo,
+             'ukuran': os.path.getsize(akhir),
+             'url': base + '/' + path_repo if base else None, 'diunggah': 0}
+        gudang.simpan(db, [b])     # disimpan satu per satu agar nomor berikutnya benar
+        baris.append(b)
+        print('[tambahan] {} -> {} ({:.2f} MB{})'.format(
+            os.path.basename(sumber), path_repo, _mb(b['ukuran']),
+            ', dikecilkan' if kecil else ''))
+    print('[tambahan] {} foto untuk {}, berlaku: {}'.format(
+        len(baris), nama_toko[folder_toko], jenis or 'semua jenis produk'))
 
     if not push:
         print('[tambahan] push dilewati')
         db.close()
         return
+    _kirim(inti, db, [b['path_repo'] for b in baris],
+           'Foto tambahan {} ({})'.format(nama_toko[folder_toko], jenis or 'semua jenis'))
+    db.close()
 
-    kode, keluaran = _git(inti.AKAR, ['add', '-f', path_repo])
-    if kode:
-        print('[tambahan] git add gagal:\n' + keluaran)
+
+def hapus_foto_tambahan(inti, cfg, folder_toko, kunci, push=True):
+    """Hapus satu foto tambahan: dari disk, dari repo, dan dari database."""
+    db = gudang.buka(inti.DB_PATH)
+    baris = db.execute(
+        "SELECT * FROM foto WHERE toko = ? AND kunci = ? AND tipe = 'tambahan'",
+        (folder_toko, kunci)).fetchone()
+    if not baris:
+        print('[tambahan] tidak ketemu: {} / {}'.format(folder_toko, kunci))
         db.close()
         return
+    path_repo = baris['path_repo']
+    lokal = os.path.join(inti.AKAR, path_repo.replace('/', os.sep))
+    kode, keluaran = _git(inti.AKAR, ['rm', '-f', '--ignore-unmatch', path_repo])
+    if kode:
+        print('[tambahan] git rm gagal:\n' + keluaran)
+    if os.path.exists(lokal):
+        os.remove(lokal)
+    db.execute("DELETE FROM foto WHERE toko = ? AND kunci = ?", (folder_toko, kunci))
+    db.commit()
+    print('[tambahan] {} dihapus'.format(path_repo))
+    if push:
+        _kirim(inti, db, [], 'Hapus foto tambahan {}'.format(kunci), tandai=False)
+    db.close()
+
+
+def _kirim(inti, db, path_repo, pesan, tandai=True):
+    """Commit + push perubahan foto tambahan."""
+    if path_repo:
+        kode, keluaran = _git(inti.AKAR, ['add', '-f'] + list(path_repo))
+        if kode:
+            print('[tambahan] git add gagal:\n' + keluaran)
+            return
     kode, keluaran = _git(inti.AKAR, [
         '-c', 'user.email=tools@local', '-c', 'user.name=mass-upload',
-        'commit', '-m', 'Foto tambahan {} ({})'.format(
-            nama_toko[folder_toko], jenis or 'semua jenis')])
+        'commit', '-m', pesan])
     if kode and 'nothing to commit' not in keluaran:
         print('[tambahan] git commit gagal:\n' + keluaran)
-        db.close()
         return
     kode, _ = _git(inti.AKAR, ['-c', 'http.postBuffer=157286400',
                                '-c', 'http.version=HTTP/1.1',
@@ -329,10 +375,11 @@ def pasang_foto_tambahan(inti, cfg, folder_toko, berkas, jenis=None, push=True):
                    cetak=lambda b: print('   ' + b))
     if kode:
         print('[tambahan] push gagal, coba lagi nanti')
+    elif tandai and path_repo:
+        gudang.tandai_terunggah(db, list(path_repo))
+        print('[tambahan] terkirim ({} berkas)'.format(len(path_repo)))
     else:
-        gudang.tandai_terunggah(db, [path_repo])
-        print('[tambahan] terkirim: {}'.format(baris[0]['url']))
-    db.close()
+        print('[tambahan] terkirim')
 
 
 def lapor_deteksi(inti, cfg, folder):
