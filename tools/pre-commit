@@ -1,0 +1,34 @@
+#!/bin/sh
+# Tolak commit yang menghapus foto dari foto-upload/.
+#
+# Foto di foto-upload/ berstatus terlacak (ditambahkan dengan "git add -f")
+# sementara foldernya masuk .gitignore. Kalau folder itu kosong di disk —
+# misalnya dibersihkan untuk menghemat tempat — perintah "git add -A" akan
+# membacanya sebagai penghapusan dan ikut menghapusnya dari repo. Semua URL
+# jsDelivr langsung mati karenanya.
+#
+# Pasang dengan: python tools/shopee_mass_upload.py pasang-hook
+
+terhapus=$(git diff --cached --name-only --diff-filter=D -- foto-upload | wc -l)
+
+if [ "$terhapus" -gt 0 ]; then
+    echo ""
+    echo "COMMIT DITOLAK: $terhapus foto akan terhapus dari foto-upload/"
+    echo ""
+    git diff --cached --name-only --diff-filter=D -- foto-upload | head -5 | sed 's/^/    /'
+    [ "$terhapus" -gt 5 ] && echo "    ... dan $((terhapus - 5)) lagi"
+    echo ""
+    echo "  Foto yang terhapus dari repo membuat URL jsDelivr-nya mati 404,"
+    echo "  dan berkas Excel yang sudah diupload ke Shopee ikut kehilangan gambar."
+    echo ""
+    echo "  Kalau folder foto-upload/ kosong karena dibersihkan, batalkan dulu:"
+    echo "      git reset"
+    echo "      git checkout HEAD -- foto-upload"
+    echo ""
+    echo "  Kalau memang sengaja menghapus foto, lewati pemeriksaan ini:"
+    echo "      git commit --no-verify"
+    echo ""
+    exit 1
+fi
+
+exit 0
