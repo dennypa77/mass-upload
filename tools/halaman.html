@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8">
+<title>Shopee Mass Upload</title>
+<style>
+:root{--bg:#1b1d21;--kartu:#24272c;--garis:#33373d;--teks:#e6e6e6;--redup:#9aa0a6;
+--biru:#4c9aff;--hijau:#4caf6d;--kuning:#e0b64a;--merah:#e06c5f;--ungu:#b388ff;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--teks);
+font:14px/1.5 "Segoe UI",system-ui,sans-serif}
+header{padding:12px 20px;border-bottom:1px solid var(--garis);display:flex;
+align-items:center;gap:16px;flex-wrap:wrap}
+h1{font-size:17px;margin:0}
+.jalur{color:var(--redup);font-size:12px}
+.kartu{background:var(--kartu);border:1px solid var(--garis);border-radius:8px;overflow:hidden}
+.kartu>h2{font-size:12px;margin:0;padding:9px 14px;border-bottom:1px solid var(--garis);
+color:var(--redup);font-weight:600;letter-spacing:.4px;text-transform:uppercase}
+.isi{padding:12px 14px}
+button{background:#2f333a;color:var(--teks);border:1px solid var(--garis);border-radius:6px;
+padding:7px 13px;font:inherit;cursor:pointer}
+button:hover:not(:disabled){background:#3a3f47;border-color:#4a505a}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.utama{background:var(--biru);border-color:var(--biru);color:#08111f;font-weight:600}
+input[type=text]{background:#1b1d21;border:1px solid var(--garis);color:var(--teks);
+border-radius:6px;padding:7px 10px;font:inherit;width:100%}
+label.centang{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:6px 10px;border-bottom:1px solid #2b2f35;font-size:13px}
+thead th{position:sticky;top:0;background:#22252a;color:var(--redup);font-weight:600;
+font-size:11px;text-transform:uppercase;letter-spacing:.3px;z-index:2;cursor:help}
+tr.folder{cursor:pointer}
+tr.folder:hover{background:#2b2f36}
+tr.folder.pilih{background:#2d3a4d;outline:1px solid var(--biru)}
+tr.jenis{cursor:pointer;background:#20232a}
+tr.jenis td{padding-top:10px;padding-bottom:10px;border-bottom:1px solid var(--garis)}
+tr.jenis b{color:var(--biru)}
+.ikon{margin-right:7px}
+.panah{display:inline-block;width:14px;color:var(--redup)}
+.tanda{display:inline-block;padding:1px 9px;border-radius:10px;font-size:11px;
+border:1px solid transparent;white-space:nowrap}
+.t-kosong{color:var(--redup);border-color:#3c4046}
+.t-baru{color:var(--kuning);border-color:#5c4a20;background:#3a2f16}
+.t-sebagian{color:var(--biru);border-color:#264468;background:#1d2c40}
+.t-siap{color:var(--hijau);border-color:#2b5236;background:#1c3324}
+.t-tanpasku{color:var(--merah);border-color:#5c2b26;background:#3a1e1b}
+.angka{color:var(--redup);font-variant-numeric:tabular-nums;white-space:nowrap}
+.redup{color:var(--redup)} .kecil{font-size:12px}
+.baris{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+/* tab */
+nav.tab{display:flex;gap:4px;padding:0 20px;border-bottom:1px solid var(--garis)}
+nav.tab button{border:none;border-bottom:2px solid transparent;border-radius:0;
+background:none;padding:11px 16px;color:var(--redup)}
+nav.tab button.aktif{color:var(--teks);border-bottom-color:var(--biru);background:none}
+section.lembar{display:none;padding:14px 20px}
+section.lembar.aktif{display:block}
+
+/* keterangan */
+.arti{border-left:3px solid #3a3f47;padding:2px 0 2px 12px;margin:10px 0 0;
+color:var(--redup);font-size:12.5px}
+.arti dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:6px 0 0}
+.arti dt{white-space:nowrap} .arti dd{margin:0}
+
+#log{background:#141619;color:#cfd3d8;font:12.5px/1.6 Consolas,monospace;padding:12px 14px;
+height:460px;overflow:auto;white-space:pre-wrap;word-break:break-word;resize:vertical}
+#log .g{color:var(--merah)} #log .p{color:var(--kuning)} #log .h{color:var(--hijau)}
+.bar{height:6px;background:#2b2f35;border-radius:3px;overflow:hidden}
+.bar>div{height:100%;background:var(--biru);width:0;transition:width .2s}
+ul.ringkas{margin:6px 0 0;padding-left:18px;color:var(--redup);font-size:12px}
+tr.rinci td{background:#1d2025;color:var(--redup);font-size:12px}
+tr.rinci li{margin:2px 0}
+</style></head><body>
+
+<header>
+  <div><h1>Shopee Mass Upload</h1><div class="jalur" id="akar"></div></div>
+  <div style="flex:1"></div>
+  <div id="ringkas" class="kecil redup"></div>
+</header>
+
+<nav class="tab">
+  <button class="aktif" data-lembar="folder">Folder Produk</button>
+  <button data-lembar="sumber">Sumber Data &amp; SKU</button>
+  <button data-lembar="siap">Kesiapan Excel</button>
+</nav>
+
+<!-- ------------------------------------------------------------ FOLDER -->
+<section class="lembar aktif" id="lembar-folder">
+  <div style="display:grid;grid-template-columns:minmax(520px,2fr) 1fr;gap:14px">
+    <div class="kartu">
+      <h2>Folder produk</h2>
+      <div class="isi" style="padding-bottom:8px">
+        <div class="baris">
+          <input type="text" id="cari" placeholder="saring nama folder, mis. 00751"
+                 style="flex:1;max-width:260px" oninput="saring()">
+          <label class="centang kecil"><input type="checkbox" id="hanyaFoto" onchange="saring()">
+            hanya yang ada fotonya</label>
+          <div style="flex:1"></div>
+          <span class="kecil redup" id="hitung"></span>
+          <button onclick="muatPohon()">Muat ulang</button>
+        </div>
+      </div>
+      <div style="max-height:520px;overflow:auto">
+        <table id="pohon">
+          <thead><tr>
+            <th title="Nama folder di komputer sumber, beserta jenis produknya">Folder</th>
+            <th title="Jumlah berkas gambar (PNG/JPG) di dalam folder ini, seluruh toko dijumlahkan">Foto di sumber</th>
+            <th title="Berapa SKU pada rentang nomor folder ini yang sudah terdaftar di data/sku.csv">SKU terdaftar</th>
+            <th title="Berapa foto folder ini yang sudah benar-benar ada di GitHub, dari yang tercatat di database">Sudah di GitHub</th>
+            <th title="Kesimpulan: apa yang masih kurang sebelum folder ini bisa jadi listing">Status</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="isi arti">
+        <b>Arti tiap kolom</b>
+        <dl>
+          <dt>Foto di sumber</dt><dd>jumlah PNG/JPG di folder itu (foto varian + foto utama, semua toko)</dd>
+          <dt>SKU terdaftar</dt><dd>berapa SKU rentang nomor itu yang sudah ada di <code>data/sku.csv</code>. Nol berarti sheet SKU-nya belum diimpor</dd>
+          <dt>Sudah di GitHub</dt><dd>ditulis <i>terunggah / tercatat</i>. Hanya foto yang sudah di GitHub yang URL-nya dipakai di Excel</dd>
+        </dl>
+        <b style="display:block;margin-top:10px">Arti tiap status</b>
+        <dl>
+          <dt><span class="tanda t-kosong">belum ada foto</span></dt><dd>foldernya ada tapi belum berisi gambar</dd>
+          <dt><span class="tanda t-baru">foto ada, belum diproses</span></dt><dd>siap diproses — tekan “Proses folder ini”</dd>
+          <dt><span class="tanda t-sebagian">sebagian diupload</span></dt><dd>sebagian foto sudah di GitHub, sisanya belum</dd>
+          <dt><span class="tanda t-tanpasku">SKU belum diimpor</span></dt><dd>fotonya ada, tapi SKU-nya tidak ada di sku.csv sehingga belum bisa masuk listing mana pun</dd>
+          <dt><span class="tanda t-siap">siap dibuat listing</span></dt><dd>foto lengkap, sudah di GitHub, dan SKU-nya terdaftar</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="kartu" style="align-self:start">
+      <h2>Folder terpilih</h2>
+      <div class="isi" id="terpilih">
+        <span class="redup">Klik salah satu folder di sebelah kiri.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------ SUMBER -->
+<section class="lembar" id="lembar-sumber">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+    <div class="kartu">
+      <h2>Folder sumber tiap jenis produk</h2>
+      <div class="isi">
+        <div id="sumber"></div>
+        <div class="baris" style="margin-top:10px">
+          <button class="utama" onclick="simpanSumber()">Simpan sumber</button>
+          <span id="statusSumber" class="kecil redup"></span>
+        </div>
+        <div class="arti">
+          Tiap jenis produk boleh berada di drive atau komputer yang berbeda — drive lokal,
+          Google Drive yang di-mount, atau folder jaringan. Atur sekali di tiap komputer.
+          <br><br>Tombol <b>Pilih…</b> membuka penjelajah folder Windows, bukan dialog browser,
+          karena browser tidak diizinkan membaca path asli sebuah folder. Path juga boleh
+          ditempel langsung ke kotaknya.
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="kartu">
+        <h2>Daftar SKU</h2>
+        <div class="isi">
+          <div id="statusSku" class="kecil"></div>
+          <div class="baris" style="margin-top:10px">
+            <button class="utama" onclick="imporSku()">Impor SKU dari Excel…</button>
+            <span id="pesanSku" class="kecil redup"></span>
+          </div>
+          <div class="arti">
+            Di Google Sheet: <b>File → Download → Microsoft Excel (.xlsx)</b>, lalu pilih
+            berkasnya di sini. Format <code>.xlsx</code> lebih baik daripada CSV karena
+            membawa semua tab sekaligus.
+            <br><br>Tidak perlu mengubah susunan sheet. Tools mencari sendiri baris judul
+            yang memuat kolom <b>Nama Produk</b>, <b>Varian</b>, dan <b>SKU</b>; baris riset
+            di atas tabel diabaikan. Jenis produk diambil dari awalan SKU
+            (<code>JB-</code>, <code>PA-</code>, <code>PB-</code>).
+            <br><br>Berkas lama dicadangkan ke <code>data/sku.csv.bak</code>.
+          </div>
+        </div>
+      </div>
+
+      <div class="kartu">
+        <h2>Alamat dasar foto</h2>
+        <div class="isi">
+          <div class="baris">
+            <input type="text" id="baseurl" style="flex:1">
+            <button onclick="simpanUrl()">Simpan</button>
+          </div>
+          <div class="arti">
+            Akar repo GitHub tempat foto disajikan, contoh
+            <code>https://cdn.jsdelivr.net/gh/pengguna/repo@main</code>.
+            Bagian <code>/foto-upload/...</code> ditambahkan otomatis.
+            Repo harus <b>public</b> — jsDelivr tidak bisa menyajikan repo privat.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------ KESIAPAN -->
+<section class="lembar" id="lembar-siap">
+  <div class="kartu">
+    <h2>Kesiapan berkas Excel</h2>
+    <div class="isi">
+      <div class="baris">
+        <button class="utama" onclick="muatCek()">Periksa sekarang</button>
+        <button onclick="perintah('build')">Buat Excel</button>
+        <button onclick="perintah('url')">Ekspor daftar URL</button>
+        <span class="kecil redup">klik baris untuk melihat rincian peringatannya</span>
+      </div>
+    </div>
+    <div id="cek" class="isi" style="padding-top:0">
+      <span class="redup">Tekan “Periksa sekarang”.</span>
+    </div>
+    <div class="isi arti">
+      <b>Jenis peringatan yang mungkin muncul</b>
+      <dl>
+        <dt>BELUM ADA FOTO</dt><dd>listing itu belum punya foto sampul — fotonya belum diproses, atau sudah disalin tapi belum di-push ke GitHub</dd>
+        <dt>judul N karakter</dt><dd>judul di luar batas Shopee 5–255 karakter</dd>
+        <dt>deskripsi N karakter</dt><dd>deskripsi di luar batas 20–3.000 karakter</dd>
+        <dt>nama varian &gt; 20 karakter</dt><dd>nama varian melebihi batas Shopee</dd>
+        <dt>ada SKU kembar</dt><dd>dua varian memakai kode SKU yang sama dalam satu listing</dd>
+        <dt>ada nama varian kembar</dt><dd>dua varian bernama sama dalam satu listing</dd>
+        <dt>atribut wajib belum diisi</dt><dd>kategori Shopee mewajibkan atribut itu, tapi belum ada di <code>config.json</code></dd>
+      </dl>
+      <div style="margin-top:8px">Kolom <b>Berfoto</b> ditulis <i>berfoto / total listing</i>.
+      Berkas boleh saja tetap diupload walau ada peringatan foto — produk masuk sebagai draf,
+      lalu fotonya ditambahkan di Seller Centre.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------ LOG -->
+<section style="padding:0 20px 20px">
+  <div class="kartu">
+    <h2>Log <span id="tahap" class="redup" style="text-transform:none;font-weight:400"></span>
+      <button onclick="document.querySelector('#log').innerHTML=''"
+              style="float:right;margin:-4px 0;padding:3px 10px;font-size:11px">Bersihkan</button>
+    </h2>
+    <div class="bar"><div id="barKerja"></div></div>
+    <div id="log"></div>
+  </div>
+</section>
+
+<script>
+let sejak=0, pilih=null, pengamat=null;
+const $=s=>document.querySelector(s);
+const api=(u,d)=>fetch(u,d?{method:'POST',body:JSON.stringify(d)}:undefined).then(r=>r.json());
+
+document.querySelectorAll('nav.tab button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav.tab button').forEach(x=>x.classList.remove('aktif'));
+  document.querySelectorAll('section.lembar').forEach(x=>x.classList.remove('aktif'));
+  b.classList.add('aktif');
+  $('#lembar-'+b.dataset.lembar).classList.add('aktif');
+});
+
+function muatStatus(){
+  api('/api/status').then(s=>{
+    $('#akar').textContent=s.akar;
+    if(document.activeElement!==$('#baseurl')) $('#baseurl').value=s.base_url;
+    if(s.sumber&&document.activeElement.className!=='jalurSumber') gambarSumber(s.sumber);
+    const sku=s.sku?`${s.sku.jumlah} SKU · ${s.sku.jenis} jenis · ${s.sku.seri} seri`
+                   :'belum ada';
+    $('#statusSku').innerHTML=s.sku
+      ? `Terdaftar sekarang: <b>${sku}</b>`
+      : `<span style="color:var(--merah)">data/sku.csv belum ada — impor dulu.</span>`;
+    $('#ringkas').innerHTML=`${sku} &nbsp;•&nbsp; database ${s.db} foto `
+      +`(${s.unggah} di GitHub) &nbsp;•&nbsp; ${s.output} berkas Excel`;
+  });
+}
+
+/* ---------------------------------------------------------------- sumber */
+function gambarSumber(daftar){
+  $('#sumber').innerHTML=daftar.map((s,i)=>`
+    <div class="baris" style="margin-bottom:8px">
+      <span style="width:96px" class="kecil"><b>${s.jenis}</b></span>
+      <input type="text" class="jalurSumber" data-jenis="${s.jenis}" value="${s.path||''}"
+             style="flex:1">
+      <button onclick="pilihSumber(${i})">Pilih…</button>
+      <span class="tanda ${s.ada?'t-siap':'t-tanpasku'}">${s.ada?'ditemukan':'tidak ada'}</span>
+    </div>`).join('');
+}
+function pilihSumber(i){
+  const kotak=document.querySelectorAll('.jalurSumber')[i];
+  $('#statusSumber').textContent='menunggu dialog…';
+  api('/api/pilih',{awal:kotak.value}).then(r=>{
+    $('#statusSumber').textContent='';
+    if(r.path)kotak.value=r.path;
+  });
+}
+function simpanSumber(){
+  const isi={};
+  document.querySelectorAll('.jalurSumber').forEach(k=>isi[k.dataset.jenis]=k.value.trim());
+  $('#statusSumber').textContent='menyimpan…';
+  api('/api/sumber',{jenis:isi}).then(()=>{
+    $('#statusSumber').textContent='tersimpan';
+    setTimeout(()=>$('#statusSumber').textContent='',2000);
+    muatStatus(); muatPohon();
+  });
+}
+function simpanUrl(){ api('/api/config',{base_url:$('#baseurl').value}).then(muatStatus); }
+
+function imporSku(){
+  $('#pesanSku').textContent='menunggu dialog…';
+  api('/api/pilih_berkas',{}).then(r=>{
+    $('#pesanSku').textContent='';
+    if(!r.path)return;
+    api('/api/perintah',{perintah:'impor',sumber:r.path}).then(x=>{
+      if(!x.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
+    });
+  });
+}
+
+/* ---------------------------------------------------------------- pohon */
+function amati(tr){
+  if(!pengamat)pengamat=new IntersectionObserver(es=>{
+    es.forEach(e=>{ if(e.isIntersecting){ pengamat.unobserve(e.target); isiStatus(e.target); } });
+  },{rootMargin:'150px'});
+  pengamat.observe(tr);
+}
+function isiStatus(tr,segar){
+  const d=tr.dataset;
+  api('/api/folder',{jenis:d.jenis,path:d.path,dari:+d.dari,sampai:+d.sampai,segar:!!segar})
+   .then(s=>{
+     tr.dataset.status=JSON.stringify(s);
+     tr.querySelector('[data-k=foto]').textContent=s.foto?s.foto+' foto':'—';
+     tr.querySelector('[data-k=sku]').textContent=s.sku?s.sku+' SKU':'0 SKU';
+     tr.querySelector('[data-k=git]').textContent=s.db?`${s.unggah} / ${s.db}`:'—';
+     tr.querySelector('[data-k=tanda]').innerHTML=
+       `<span class="tanda t-${s.keadaan}">${s.label}</span>`;
+     if(tr.classList.contains('pilih'))tulisDetail(s);
+     saring();
+   }).catch(()=>{});
+}
+function muatPohon(){
+  if(pengamat){pengamat.disconnect();pengamat=null;}
+  api('/api/pohon').then(d=>{
+    const tb=$('#pohon tbody'); tb.innerHTML=''; let total=0;
+    d.jenis.forEach((j,idx)=>{
+      const th=document.createElement('tr'); th.className='jenis';
+      th.innerHTML=`<td colspan="5">
+        <span class="panah">▾</span><span class="ikon">🗂️</span><b>${j.jenis}</b>
+        <span class="redup" style="font-weight:400">— ${j.folder.length} folder</span>
+        ${j.ada?'':'<span class="tanda t-tanpasku">folder sumber tidak ditemukan</span>'}
+        <span class="redup kecil" style="margin-left:10px">${j.akar}</span></td>`;
+      th.onclick=()=>{
+        const buka=th.dataset.buka!=='0'; th.dataset.buka=buka?'0':'1';
+        th.querySelector('.panah').textContent=buka?'▸':'▾';
+        saring();
+      };
+      tb.appendChild(th);
+      j.folder.forEach(f=>{
+        total++;
+        const r=document.createElement('tr'); r.className='folder';
+        Object.assign(r.dataset,{jenis:j.jenis,path:f.path,dari:f.dari,sampai:f.sampai,
+                                 nama:f.nama});
+        r.innerHTML=`<td><span class="ikon" style="margin-left:16px">📂</span>${f.nama}
+            <span class="redup kecil">· ${j.jenis}</span></td>
+          <td class="angka" data-k="foto">…</td>
+          <td class="angka" data-k="sku"></td>
+          <td class="angka" data-k="git"></td>
+          <td data-k="tanda"></td>`;
+        r.onclick=()=>pilihFolder(r);
+        tb.appendChild(r); amati(r);
+      });
+    });
+    $('#hitung').textContent=total+' folder';
+    saring();
+  });
+}
+function saring(){
+  const q=$('#cari').value.trim().toLowerCase();
+  const hanya=$('#hanyaFoto').checked;
+  let tampak=0;
+  document.querySelectorAll('tr.jenis').forEach(th=>{
+    const buka=th.dataset.buka!=='0';
+    let anak=th.nextElementSibling;
+    while(anak&&anak.classList.contains('folder')){
+      const s=anak.dataset.status?JSON.parse(anak.dataset.status):null;
+      let ok=buka;
+      if(ok&&q) ok=anak.dataset.nama.toLowerCase().includes(q);
+      if(ok&&hanya) ok=!!(s&&s.foto);
+      anak.style.display=ok?'':'none';
+      if(ok)tampak++;
+      anak=anak.nextElementSibling;
+    }
+  });
+  $('#hitung').textContent=tampak+' folder tampil';
+}
+
+/* ---------------------------------------------------------------- terpilih */
+function pilihFolder(tr){
+  document.querySelectorAll('tr.folder').forEach(x=>x.classList.remove('pilih'));
+  tr.classList.add('pilih');
+  pilih={jenis:tr.dataset.jenis,path:tr.dataset.path,nama:tr.dataset.nama,tr:tr};
+  $('#terpilih').innerHTML=`<div><b>${tr.dataset.nama}</b>
+      <span class="redup kecil">${tr.dataset.jenis}</span></div>
+    <div class="kecil redup" style="word-break:break-all;margin-top:2px">${tr.dataset.path}</div>
+    <div id="detail" class="kecil" style="margin-top:10px">…</div>
+    <div class="baris" style="margin-top:12px">
+      <button onclick="deteksi()">Deteksi isi</button>
+      <button onclick="isiStatus(pilih.tr,true)">Hitung ulang</button>
+    </div>
+    <div class="baris" style="margin-top:8px">
+      <label class="centang kecil"><input type="checkbox" id="push" checked>
+        upload ke GitHub setelah disalin</label>
+      <button class="utama" onclick="proses()">Proses folder ini</button>
+    </div>
+    <div class="arti"><b>Deteksi isi</b> hanya membaca — menampilkan foto apa saja yang
+      dikenali dan ke toko/seri mana perginya. <b>Proses folder ini</b> menyalin foto ke
+      <code>foto-upload/</code>, mengunggahnya, lalu mencatat URL-nya ke database.</div>`;
+  const s=tr.dataset.status?JSON.parse(tr.dataset.status):null;
+  if(s)tulisDetail(s); else isiStatus(tr);
+}
+function tulisDetail(s){
+  const el=$('#detail'); if(!el)return;
+  el.innerHTML=`<table style="margin:0">
+    <tr><td class="redup">Foto di sumber</td><td><b>${s.foto}</b></td></tr>
+    <tr><td class="redup">Toko terdeteksi</td><td>${s.toko.length} (${s.toko.join(', ')||'-'})</td></tr>
+    <tr><td class="redup">SKU terdaftar</td><td>${s.sku}</td></tr>
+    <tr><td class="redup">Tercatat di database</td><td>${s.db}</td></tr>
+    <tr><td class="redup">Sudah di GitHub</td><td><b>${s.unggah}</b> / ${s.db}</td></tr>
+    <tr><td class="redup">Status</td><td><span class="tanda t-${s.keadaan}">${s.label}</span></td></tr>
+  </table>`;
+}
+function deteksi(){
+  if(!pilih)return;
+  $('#detail').textContent='mendeteksi…';
+  api('/api/deteksi',{path:pilih.path}).then(d=>{
+    if(!d.jumlah){$('#detail').innerHTML=
+      `<span style="color:var(--merah)">Tidak ada foto yang dikenali (${d.dilewati} berkas dilewati).</span>`;return;}
+    let h=`<b>${d.jumlah} foto dikenali</b><ul class="ringkas">`;
+    d.rekap.forEach(r=>h+=`<li>${r.toko} · ${r.jenis} · ${r.seri} — ${r.n} foto</li>`);
+    h+='</ul>';
+    if(d.tanpa_seri.length)h+=`<div style="color:var(--kuning);margin-top:6px">
+      ! SKU belum ada di sku.csv: ${d.tanpa_seri.join(', ')}</div>`;
+    if(d.contoh)h+=`<div class="redup" style="margin-top:6px">contoh tujuan: ${d.contoh}</div>`;
+    $('#detail').innerHTML=h;
+  });
+}
+function proses(){
+  if(!pilih)return;
+  const push=$('#push').checked;
+  if(!confirm(`Proses folder:\n${pilih.path}\n\n`+
+     (push?'Foto akan disalin, lalu di-commit dan di-push ke GitHub.':
+           'Foto hanya disalin, tanpa upload.')))return;
+  api('/api/unggah',{path:pilih.path,push:push}).then(r=>{
+    if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
+  });
+}
+
+/* ---------------------------------------------------------------- kesiapan */
+function perintah(n){api('/api/perintah',{perintah:n}).then(r=>{
+  if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');});}
+
+function muatCek(){
+  $('#cek').innerHTML='<span class="redup">memeriksa…</span>';
+  api('/api/cek',{}).then(d=>{
+    let h='<table><thead><tr><th title="Berkas Excel yang akan dihasilkan">Berkas</th>'
+      +'<th title="Jumlah listing (produk) di dalam berkas itu">Listing</th>'
+      +'<th title="Berapa listing yang sudah punya foto sampul">Berfoto</th>'
+      +'<th title="Jumlah varian keseluruhan; satu baris Excel per varian">Varian</th>'
+      +'<th title="Hal yang perlu dibereskan sebelum diupload">Masalah</th></tr></thead><tbody>';
+    d.berkas.forEach((b,i)=>{
+      const foto=b.listing.filter(l=>l.foto).length;
+      const varian=b.listing.reduce((a,l)=>a+l.varian,0);
+      const w=b.peringatan.length;
+      h+=`<tr class="folder" onclick="bukaRinci(${i})"><td>${b.berkas.replace('.xlsx','')}</td>
+        <td class="angka">${b.listing.length}</td>
+        <td class="angka">${foto} / ${b.listing.length}</td>
+        <td class="angka">${varian}</td>
+        <td><span class="tanda ${w?'t-baru':'t-siap'}">${w?w+' peringatan':'siap'}</span></td></tr>
+        <tr class="rinci" id="rinci${i}" style="display:none"><td colspan="5">
+        ${w?'<ul>'+b.peringatan.map(p=>'<li>'+p+'</li>').join('')+'</ul>'
+           :'Tidak ada masalah pada berkas ini.'}</td></tr>`;
+    });
+    $('#cek').innerHTML=h+'</tbody></table>';
+  }).catch(()=>$('#cek').innerHTML='<span style="color:var(--merah)">gagal memeriksa</span>');
+}
+function bukaRinci(i){
+  const el=$('#rinci'+i);
+  el.style.display=el.style.display==='none'?'':'none';
+}
+
+/* ---------------------------------------------------------------- log */
+setInterval(()=>{
+  api('/api/log?sejak='+sejak).then(d=>{
+    if(d.baris.length){
+      const el=$('#log'); const bawah=el.scrollTop+el.clientHeight>=el.scrollHeight-30;
+      d.baris.forEach(b=>{
+        const s=document.createElement('span');
+        s.className=/^\s*!|^\[error|^\[berhenti|gagal/.test(b)?'g'
+                   :(/^>>>|^\[selesai/.test(b)?'p':(/terkirim|selesai —/.test(b)?'h':''));
+        s.textContent=b+'\n'; el.appendChild(s);
+      });
+      sejak=d.total; if(bawah)el.scrollTop=el.scrollHeight;
+    }
+    $('#tahap').textContent=d.sibuk
+      ? `— ${d.sibuk}${d.tahap?': '+d.tahap+' '+d.n+'/'+d.total_maju:''}` : '';
+    $('#barKerja').style.width=(d.sibuk&&d.total_maju?d.n/d.total_maju*100:0)+'%';
+    if(!d.sibuk&&window._tadiSibuk){muatStatus();muatCek();}
+    window._tadiSibuk=!!d.sibuk;
+  }).catch(()=>{});
+},700);
+
+muatStatus(); muatPohon();
+</script></body></html>
