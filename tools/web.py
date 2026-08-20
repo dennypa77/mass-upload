@@ -12,7 +12,7 @@ Isinya:
   - tombol proses per folder, dan langkah lain (impor, cek, build, ekspor URL)
   - log berjalan
 """
-import json, os, re, subprocess, sys, threading, traceback, webbrowser
+import json, os, re, subprocess, sys, threading, time, traceback, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -549,6 +549,35 @@ def halaman():
         return f.read()
 
 
+BERKAS_KODE = [os.path.join(os.path.dirname(os.path.abspath(__file__)), f)
+               for f in ('web.py', 'shopee_mass_upload.py', 'unggah.py', 'gudang.py')]
+
+
+def _cap_kode():
+    return tuple(os.path.getmtime(f) if os.path.exists(f) else 0 for f in BERKAS_KODE)
+
+
+def awasi_kode():
+    """Jalankan ulang server sendiri kalau kode Python-nya berubah.
+
+    halaman.html dibaca ulang tiap permintaan, tapi kode Python hanya dimuat
+    sekali. Tanpa ini, halaman baru bisa memanggil endpoint yang belum ada di
+    server yang sedang jalan — gejalanya tombol atau dropdown diam saja.
+    Penjalanan ulang ditunda selama masih ada pekerjaan berlangsung.
+    """
+    awal = _cap_kode()
+    while True:
+        time.sleep(1.5)
+        if _cap_kode() != awal and not SIBUK['nama']:
+            print('[server] kode berubah, menjalankan ulang…')
+            catat('[server] kode berubah, server dijalankan ulang')
+            try:
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            except Exception as e:      # kalau gagal, cukup beri tahu
+                print('[server] gagal menjalankan ulang: {}'.format(e))
+                return
+
+
 def main():
     alamat = 'http://127.0.0.1:{}'.format(PORT)
     server = ThreadingHTTPServer(('127.0.0.1', PORT), Penangan)
@@ -557,6 +586,7 @@ def main():
     muat_cache()
     catat('[siap] buka {} di browser'.format(alamat))
     threading.Timer(0.8, lambda: webbrowser.open(alamat)).start()
+    threading.Thread(target=awasi_kode, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
