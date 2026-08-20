@@ -92,9 +92,11 @@ def baca_sku():
             baris = {(k or '').strip().lower(): (v or '').strip() for k, v in baris.items()}
             if not baris.get('sku'):
                 continue
-            for wajib in ('jenis', 'seri', 'varian'):
+            for wajib in ('jenis', 'seri'):
                 if not baris.get(wajib):
                     sys.exit('sku.csv baris {}: kolom "{}" kosong'.format(i, wajib))
+            # kolom "varian" boleh tidak ada; nama varian memakai SKU-nya
+            baris.setdefault('varian', '') or baris.update(varian=baris['sku'])
             if any(re.search(x, baris['sku'], re.I) for x in pola):
                 dilewati += 1
                 continue
@@ -272,6 +274,103 @@ def _baris_tabel(rows):
         if re.match(r'^[A-Z]{2}-[A-Z0-9-]+$', baris_data['sku'].upper()) and baris_data['varian']:
             hasil.append(baris_data)
     return hasil
+
+
+POLA_SKU = re.compile(r'^[A-Z]{2}-[A-Z0-9][A-Z0-9-]*$', re.I)
+
+
+def baca_tempelan(teks):
+    """Baca data SKU yang ditempel langsung dari Google Sheet.
+
+    Menerima hasil salin dari Sheets (dipisah tab) maupun CSV. Kalau ada baris
+    judul yang memuat "SKU" dan "Nama Produk", kolomnya diambil dari situ.
+    Kalau tidak ada, kolom SKU dikenali dari polanya (JB-0000001) dan kolom
+    nama produk diambil dari kolom teks terpanjang.
+    """
+    baris = [b for b in teks.replace('\r', '').split('\n') if b.strip()]
+    if not baris:
+        return []
+    pisah = '\t' if any('\t' in b for b in baris) else ','
+    tabel = [[sel.strip().strip('"') for sel in b.split(pisah)] for b in baris]
+
+    kolom, mulai = None, 0
+    for i, sel in enumerate(tabel[:10]):
+        rendah = [s.lower() for s in sel]
+        if 'sku' in rendah and any(x in rendah for x in ('nama produk', 'seri')):
+            kolom = {'sku': rendah.index('sku')}
+            kolom['seri'] = rendah.index('nama produk') if 'nama produk' in rendah \
+                else rendah.index('seri')
+            if 'varian' in rendah:
+                kolom['varian'] = rendah.index('varian')
+            mulai = i + 1
+            break
+
+    if kolom is None:
+        # tebak: kolom yang isinya berpola SKU, dan kolom teks terpanjang
+        skor_sku, panjang = {}, {}
+        for sel in tabel:
+            for i, s in enumerate(sel):
+                if POLA_SKU.match(s):
+                    skor_sku[i] = skor_sku.get(i, 0) + 1
+                panjang[i] = max(panjang.get(i, 0), len(s))
+        if not skor_sku:
+            return []
+        i_sku = max(skor_sku, key=skor_sku.get)
+        sisa = {i: p for i, p in panjang.items() if i != i_sku}
+        kolom = {'sku': i_sku, 'seri': max(sisa, key=sisa.get) if sisa else i_sku}
+
+    hasil = []
+    for sel in tabel[mulai:]:
+        try:
+            sku = sel[kolom['sku']]
+            seri = sel[kolom['seri']]
+        except IndexError:
+            continue
+        if not POLA_SKU.match(sku) or not seri:
+            continue
+        hasil.append({'sku': sku.upper(), 'seri': seri,
+                      'varian': sel[kolom['varian']] if kolom.get('varian') is not None
+                      and len(sel) > kolom['varian'] else sku.upper()})
+    return hasil
+
+
+def tulis_sku(cfg, catatan, gabung=True):
+    """Tulis daftar SKU ke data/sku.csv. `gabung` menambah ke data yang ada."""
+    jenis_dari_prefix = {j['prefix_sku'].upper(): nama for nama, j in cfg['jenis'].items()}
+    lama = OrderedDict()
+    if gabung and os.path.exists(SKU_CSV):
+        with open(SKU_CSV, encoding='utf-8-sig', newline='') as f:
+            for r in csv.DictReader(f):
+                if r.get('sku'):
+                    lama[r['sku'].upper()] = [r.get('jenis', ''), r.get('seri', ''),
+                                              r.get('varian') or r['sku'], r['sku'].upper()]
+
+    baru = diperbarui = dilewati = 0
+    for c in catatan:
+        jenis = jenis_dari_prefix.get(c['sku'].split('-')[0].upper())
+        if not jenis:
+            dilewati += 1
+            continue
+        isi = [jenis, c['seri'], c['varian'], c['sku']]
+        if c['sku'] in lama:
+            if lama[c['sku']] != isi:
+                diperbarui += 1
+            lama[c['sku']] = isi
+        else:
+            lama[c['sku']] = isi
+            baru += 1
+
+    if not lama:
+        return {'ok': False, 'pesan': 'Tidak ada SKU yang bisa dibaca.'}
+    if os.path.exists(SKU_CSV):
+        shutil.copy2(SKU_CSV, SKU_CSV + '.bak')
+    os.makedirs(os.path.dirname(SKU_CSV), exist_ok=True)
+    with open(SKU_CSV, 'w', encoding='utf-8-sig', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['jenis', 'seri', 'varian', 'sku'])
+        w.writerows(sorted(lama.values(), key=lambda r: (r[0], r[3])))
+    return {'ok': True, 'baru': baru, 'diperbarui': diperbarui,
+            'dilewati': dilewati, 'total': len(lama)}
 
 
 def perintah_impor(cfg, sumber):
