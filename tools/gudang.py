@@ -85,12 +85,25 @@ def ambil(db, toko=None, jenis=None, seri=None, hanya_terunggah=False):
     return [dict(r) for r in db.execute(sql + ' ORDER BY toko, jenis, kunci', nilai)]
 
 
-def peta_url(db):
-    """{toko: {KUNCI: url}} — dipakai saat mengisi berkas Excel."""
+def peta_url(db, hanya_terunggah=True):
+    """{toko: {KUNCI: url}} — dipakai saat mengisi berkas Excel.
+
+    Bawaannya hanya foto yang sudah benar-benar ada di GitHub. Foto yang baru
+    disalin tapi belum di-push sengaja tidak diberi URL, supaya berkas Excel
+    tidak berisi alamat yang masih 404 di mata Shopee.
+    """
+    sql = 'SELECT toko, kunci, url FROM foto WHERE url IS NOT NULL'
+    if hanya_terunggah:
+        sql += ' AND diunggah = 1'
     hasil = {}
-    for r in db.execute('SELECT toko, kunci, url FROM foto WHERE url IS NOT NULL'):
+    for r in db.execute(sql):
         hasil.setdefault(r['toko'], {})[r['kunci'].upper()] = r['url']
     return hasil
+
+
+def belum_terunggah(db):
+    r = db.execute('SELECT COUNT(*) n FROM foto WHERE diunggah = 0').fetchone()
+    return r['n']
 
 
 def ringkasan(db):
