@@ -37,7 +37,30 @@ Kalau dikosongkan, tools kembali memakai cara lama: `foto.root` + `folder_drive`
 
 ### Penjelajah folder
 
-Tampilan web berisi penjelajah folder dengan status per folder:
+Tampilan web punya tiga tab:
+
+| Tab | Isi |
+|---|---|
+| **Folder Produk** | penjelajah folder + panel folder terpilih |
+| **Sumber Data & SKU** | folder sumber tiap jenis, impor SKU, alamat dasar foto |
+| **Kesiapan Excel** | ringkasan tiap berkas keluaran + rincian peringatannya |
+
+Log ada di bawah, tingginya bisa ditarik sendiri.
+
+### Kolom pada penjelajah folder
+
+| Kolom | Arti |
+|---|---|
+| Folder | nama folder di komputer sumber, beserta jenis produknya |
+| Foto di sumber | jumlah PNG/JPG di folder itu — foto varian + foto utama, semua toko dijumlahkan |
+| SKU terdaftar | berapa SKU pada rentang nomor folder itu yang sudah ada di `data/sku.csv` |
+| Sudah di GitHub | ditulis *terunggah / tercatat*. Hanya foto yang sudah di GitHub yang URL-nya dipakai di Excel |
+| Status | kesimpulan: apa yang masih kurang |
+
+Penjelasan tiap kolom dan tiap status juga tercetak langsung di bawah tabel, jadi tidak
+perlu membuka dokumen ini.
+
+Status per folder:
 
 | Tanda | Arti |
 |---|---|

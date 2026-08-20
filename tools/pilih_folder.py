@@ -6,7 +6,7 @@ memberi tahu path asli sebuah folder, jadi dialognya dijalankan di sisi server
 — yang memang komputer yang sama. Dijadikan proses sendiri supaya Tk tidak
 bentrok dengan thread server.
 
-Pemakaian: python tools/pilih_folder.py [folder_awal]
+Pemakaian: python tools/pilih_folder.py [folder_awal] [--berkas]
 """
 import sys
 import tkinter as tk
@@ -18,9 +18,15 @@ def main():
     akar = tk.Tk()
     akar.withdraw()
     akar.attributes('-topmost', True)
-    jalur = filedialog.askdirectory(
-        title='Pilih folder sumber foto', mustexist=True,
-        initialdir=awal or None)
+    if '--berkas' in sys.argv:
+        jalur = filedialog.askopenfilename(
+            title='Pilih ekspor sheet SKU',
+            filetypes=[('Excel / CSV', '*.xlsx *.xlsm *.csv'), ('Semua berkas', '*.*')],
+            initialdir=awal or None)
+    else:
+        jalur = filedialog.askdirectory(
+            title='Pilih folder sumber foto', mustexist=True,
+            initialdir=awal or None)
     akar.destroy()
     sys.stdout.write(jalur or '')
 
