@@ -271,8 +271,8 @@ Semuanya lewat tab **Pengaturan Produk**. Nilai-nilainya tersimpan di `tools/con
 — itu satu-satunya sumbernya, jadi Pratinjau dan Export langsung ikut berubah. Boleh juga
 mengedit `config.json` langsung, tapi lewat tab ini ada pemeriksaannya.
 
-Satu kartu per jenis produk, isinya semua yang berkaitan dengan jenis itu — tanpa dropdown,
-semuanya langsung terlihat:
+Ada tiga sub-tab, satu per jenis produk — **JIBBITZ**, **PIN AKRILIK**, **PIN BUTTON**.
+Tiap sub-tab memuat semua yang berkaitan dengan jenis itu, tanpa dropdown:
 
 ```
 JIBBITZ — Aksesoris & Perawatan Sepatu Lainnya
@@ -299,6 +299,9 @@ disubstitusi, jadi itu panjang yang sebenarnya masuk ke Shopee.
 
 Kalau dua toko memakai profil gaya yang sama, keduanya ditampilkan sebagai **satu** editor
 dengan keterangan "dipakai bersama" — supaya tidak saling menimpa tanpa disadari.
+
+Berpindah sub-tab tidak menghilangkan suntingan: tombol **Simpan semua perubahan** mengambil
+isi ketiga jenis sekaligus, termasuk yang sedang tidak tampil.
 
 Yang ditolak sebelum tersimpan: angka yang bukan angka atau di luar batas Shopee, harga per
 pcs di bawah Rp99, dan deskripsi di luar 20–3.000 karakter. Kalau ada yang ditolak,
