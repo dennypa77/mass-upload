@@ -563,6 +563,29 @@ pengalaman, 1 level variasi masih diterima sampai ~60 varian. Tools ini memakai 
 variasi. Kalau file ditolak Shopee karena kelebihan varian, seri perlu dipecah jadi beberapa
 listing.
 
+## Kalau upload terlihat macet
+
+Git menulis progress unggahan dengan *carriage return*, bukan baris baru. Versi lama tools
+hanya memecah keluaran per baris baru, jadi selama mengunggah tidak ada satu pun baris
+tercetak — terlihat seperti berhenti padahal sedang berjalan. Sudah diperbaiki: progress
+tampil langsung, dan kalau lebih dari 25 detik tidak ada kabar muncul penanda
+`… masih berjalan`.
+
+Kalau benar-benar berhenti tanpa penanda itu, biasanya **git belum punya izin ke GitHub**
+di komputer tersebut. Tools sekarang memeriksanya lebih dulu, sebelum menyalin apa pun:
+
+```
+[unggah] tidak bisa mengunggah:
+     Git belum punya izin ke GitHub di komputer ini.
+     Jalankan sekali: gh auth login
+     atau pasang Git Credential Manager lalu push manual sekali
+     supaya kredensialnya tersimpan.
+[unggah] dibatalkan sebelum menyalin.
+```
+
+Git juga dijalankan dengan `GIT_TERMINAL_PROMPT=0`, jadi kalau kredensial kurang git langsung
+gagal dengan pesan — tidak lagi menunggu ketikan yang tidak pernah terlihat.
+
 ## Kalau error
 
 **`Unable to read workbook ... invalid XML`** — sudah ditangani. Template Shopee memakai nilai

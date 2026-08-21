@@ -23,6 +23,8 @@ from datetime import datetime
 def _git(akar, argumen, cetak=None):
     proses = subprocess.Popen(
         ['git'] + list(argumen), cwd=akar,
+        env=dict(os.environ, GIT_TERMINAL_PROMPT='0'),
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding='utf-8', errors='replace', bufsize=1)
     baris = []
