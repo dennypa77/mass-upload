@@ -10,7 +10,7 @@ kiriman besar dengan galat HTTP 408, jadi tiap bagian dibatasi ukurannya dan
 dikirim satu per satu — kalau satu bagian gagal, bagian yang sudah terkirim
 tetap tercatat dan proses bisa dilanjutkan tanpa mengulang dari awal.
 """
-import os, re, subprocess, sys, threading
+import os, re, subprocess, sys, threading, time
 from concurrent.futures import ThreadPoolExecutor
 
 import gudang
@@ -20,26 +20,85 @@ COBA_ULANG = 3
 SALINAN_SERENTAK = 8                # berapa foto disalin bersamaan dari Drive
 
 
-def _git(akar, argumen, cetak=None, masukan=None):
-    """Jalankan git sambil menampilkan keluarannya baris demi baris."""
+def _lingkungan_git():
+    """Git tidak boleh berhenti menunggu ketikan.
+
+    Kalau kredensial belum diatur, git akan meminta username/password. Di sini
+    keluarannya ditangkap, jadi permintaan itu tidak pernah terlihat dan
+    prosesnya menggantung selamanya. Dengan GIT_TERMINAL_PROMPT=0 git langsung
+    gagal dengan pesan yang bisa dibaca.
+    """
+    return dict(os.environ, GIT_TERMINAL_PROMPT='0')
+
+
+def _git(akar, argumen, cetak=None, masukan=None, jeda_kabar=25):
+    """Jalankan git sambil menampilkan keluarannya begitu muncul.
+
+    Git menulis progress dengan carriage return, bukan baris baru, jadi
+    pemisahnya harus mencakup \r — kalau tidak, unggahan besar terlihat diam
+    bermenit-menit padahal sedang berjalan.
+    """
     proses = subprocess.Popen(
-        ['git'] + list(argumen), cwd=akar,
-        stdin=subprocess.PIPE if masukan is not None else None,
+        ['git'] + list(argumen), cwd=akar, env=_lingkungan_git(),
+        stdin=subprocess.PIPE if masukan is not None else subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding='utf-8', errors='replace', bufsize=1)
     if masukan is not None:
         proses.stdin.write(masukan)
         proses.stdin.close()
-    baris = []
-    for b in proses.stdout:
-        b = b.rstrip()
-        if not b:
-            continue
-        baris.append(b)
+
+    baris, sisa = [], ''
+    mulai = [time.time()]
+
+    def kabar():
+        # kalau lama tidak ada keluaran, beri tanda masih hidup
+        while proses.poll() is None:
+            time.sleep(1)
+            diam = time.time() - mulai[0]
+            if cetak and diam >= jeda_kabar:
+                cetak('… masih berjalan ({:.0f} detik tanpa kabar)'.format(diam))
+                mulai[0] = time.time()
+
+    penjaga = threading.Thread(target=kabar, daemon=True)
+    if cetak:
+        penjaga.start()
+
+    while True:
+        potong = proses.stdout.read(1)
+        if not potong:
+            break
+        if potong in '\r\n':
+            teks = sisa.strip()
+            sisa = ''
+            if not teks:
+                continue
+            mulai[0] = time.time()
+            baris.append(teks)
+            if cetak:
+                cetak(teks)
+        else:
+            sisa += potong
+    if sisa.strip():
+        baris.append(sisa.strip())
         if cetak:
-            cetak(b)
+            cetak(sisa.strip())
     proses.wait()
     return proses.returncode, '\n'.join(baris)
+
+
+def periksa_akses(inti):
+    """Pastikan git bisa menghubungi GitHub sebelum menyalin apa pun."""
+    kode, keluaran = _git(inti.AKAR, ['ls-remote', '--exit-code', 'origin', 'HEAD'])
+    if kode == 0:
+        return True, ''
+    pesan = keluaran.strip()
+    if 'could not read Username' in pesan or 'Authentication failed' in pesan \
+            or 'terminal prompts disabled' in pesan:
+        pesan = ('Git belum punya izin ke GitHub di komputer ini.\n'
+                 '     Jalankan sekali: gh auth login\n'
+                 '     atau pasang Git Credential Manager lalu push manual sekali '
+                 'supaya kredensialnya tersimpan.')
+    return False, pesan
 
 
 def deteksi(inti, cfg, folder):
@@ -172,6 +231,15 @@ def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
         for t in tak_dikenal[:5]:
             print('   ! ' + t)
         return
+
+    if push:
+        boleh, kenapa = periksa_akses(inti)
+        if not boleh:
+            print('[unggah] tidak bisa mengunggah:')
+            print('     ' + kenapa.replace('\n', '\n     '))
+            print('[unggah] dibatalkan sebelum menyalin. Perbaiki dulu izinnya, '
+                  'atau lepas centang upload untuk menyalin saja.')
+            return
 
     rekap = _rekap(temuan)
     print('[unggah] folder : {}'.format(folder))
