@@ -13,3 +13,5 @@ data/uji/
 output/uji/
 data/cache_folder.json
 output/pilihan/
+data/lokal.json
+data/cadangan-*/

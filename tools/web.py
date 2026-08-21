@@ -474,6 +474,12 @@ class Penangan(BaseHTTPRequestHandler):
                 return self._kirim(baca_pengaturan(cfg))
             if self.path == '/api/simpan_pengaturan':
                 return self._kirim(simpan_pengaturan(cfg, badan))
+            if self.path == '/api/perbarui':
+                import perbarui as modul_perbarui
+                if badan.get('pasang'):
+                    return self._kirim({'mulai': di_latar(
+                        'perbarui', lambda: modul_perbarui.pasang(inti, catat))})
+                return self._kirim(modul_perbarui.periksa(inti))
             if self.path == '/api/buka':
                 peta = {'output': inti.DIR_OUT, 'foto': inti.DIR_FOTO,
                         'data': os.path.join(inti.AKAR, 'data')}
@@ -484,14 +490,18 @@ class Penangan(BaseHTTPRequestHandler):
             if self.path == '/api/pilih_berkas':
                 return self._kirim({'path': dialog_berkas()})
             if self.path == '/api/sumber':
-                # simpan folder sumber tiap jenis produk
+                # Folder sumber berbeda tiap komputer, jadi disimpan di
+                # data/lokal.json yang tidak ikut git — supaya tidak tertimpa
+                # saat memperbarui dari GitHub.
+                lokal = inti.baca_lokal()
                 for jenis, jalur in (badan.get('jenis') or {}).items():
                     if jenis in cfg['jenis']:
-                        cfg['jenis'][jenis]['path_drive'] = (jalur or '').strip() or None
+                        lokal.setdefault('jenis', {}).setdefault(jenis, {})['path_drive'] = \
+                            (jalur or '').strip() or None
                 if badan.get('root') is not None:
-                    cfg['foto']['root'] = (badan['root'] or '').strip() or None
-                with open(inti.CONFIG, 'w', encoding='utf-8') as f:
-                    json.dump(cfg, f, ensure_ascii=False, indent=2)
+                    lokal.setdefault('foto', {})['root'] = (badan['root'] or '').strip() or None
+                inti.tulis_lokal(lokal)
+                cfg = inti.baca_config()
                 SINGGAHAN.clear()
                 simpan_cache()
                 catat('[ui] folder sumber disimpan')

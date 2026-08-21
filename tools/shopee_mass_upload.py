@@ -36,6 +36,7 @@ DIR_FOTO = os.path.join(AKAR, 'foto-upload')
 DIR_OUT = os.path.join(AKAR, 'output')
 MANIFEST = os.path.join(DIR_FOTO, '_manifest.json')
 DB_PATH = os.path.join(AKAR, 'data', 'foto.db')
+LOKAL = os.path.join(AKAR, 'data', 'lokal.json')
 
 # Saringan uji coba. Kalau salah satu diisi, tools hanya memproses yang cocok dan
 # hasilnya ditulis ke folder terpisah (output/uji, data/uji) supaya berkas asli aman.
@@ -68,9 +69,49 @@ MAKS_JUDUL, MIN_DESK, MAKS_DESK = 255, 20, 3000
 MAKS_NAMA_VARIASI, MAKS_VARIAN = 14, 20
 
 
+def _timpa(dasar, atas):
+    """Gabungkan dua dict bersarang; nilai di `atas` menang."""
+    for k, v in (atas or {}).items():
+        if isinstance(v, dict) and isinstance(dasar.get(k), dict):
+            _timpa(dasar[k], v)
+        elif v is not None:
+            dasar[k] = v
+    return dasar
+
+
 def baca_config():
+    """Pengaturan bersama dari tools/config.json, ditimpa data/lokal.json.
+
+    config.json ikut diperbarui dari GitHub, jadi isinya hal yang sama untuk
+    semua komputer: harga, deskripsi, judul, kategori. Hal yang berbeda tiap
+    komputer — terutama letak folder foto di Drive — disimpan di data/lokal.json
+    yang tidak ikut git, sehingga tidak tertimpa saat memperbarui.
+    """
     with open(CONFIG, encoding='utf-8') as f:
-        return json.load(f)
+        cfg = json.load(f)
+    if os.path.exists(LOKAL):
+        try:
+            with open(LOKAL, encoding='utf-8') as f:
+                _timpa(cfg, json.load(f))
+        except ValueError:
+            print('[config] data/lokal.json rusak, diabaikan')
+    return cfg
+
+
+def baca_lokal():
+    if os.path.exists(LOKAL):
+        try:
+            with open(LOKAL, encoding='utf-8') as f:
+                return json.load(f)
+        except ValueError:
+            pass
+    return {}
+
+
+def tulis_lokal(isi):
+    os.makedirs(os.path.dirname(LOKAL), exist_ok=True)
+    with open(LOKAL, 'w', encoding='utf-8') as f:
+        json.dump(isi, f, ensure_ascii=False, indent=2)
 
 
 def baca_sku():
@@ -956,9 +997,10 @@ def perintah_build(cfg, data, sub=None):
 
 def main():
     p = argparse.ArgumentParser(description='Pembuat file Shopee Mass Upload')
-    p.add_argument('perintah', choices=['impor', 'template', 'pasang-hook', 'deteksi', 'unggah', 'foto', 'url', 'cek', 'build', 'semua'])
+    p.add_argument('perintah', choices=['impor', 'perbarui', 'template', 'pasang-hook', 'deteksi', 'unggah', 'foto', 'url', 'cek', 'build', 'semua'])
     p.add_argument('sumber', nargs='?', help='untuk "impor": berkas ekspor SKU; untuk "unggah": folder produk')
     p.add_argument('--tanpa-push', action='store_true', help='unggah: siapkan saja, jangan push ke GitHub')
+    p.add_argument('--pasang', action='store_true', help='perbarui: langsung pasang, jangan cek saja')
     p.add_argument('--toko', help='uji coba: batasi ke satu toko, mis. "toko1" atau "Hangs"')
     p.add_argument('--jenis', help='uji coba: batasi ke satu jenis, mis. "JIBBITZ"')
     p.add_argument('--seri', help='uji coba: batasi ke satu seri, mis. "CORTIS"')
@@ -973,6 +1015,25 @@ def main():
         if not a.sumber:
             sys.exit('Contoh: python tools/shopee_mass_upload.py impor "SKU.xlsx"')
         perintah_impor(cfg, a.sumber)
+        return
+
+    if a.perintah == 'perbarui':
+        import perbarui as modul_perbarui
+        if a.pasang:
+            modul_perbarui.pasang(sys.modules[__name__])
+        else:
+            info = modul_perbarui.periksa(sys.modules[__name__])
+            if not info['siap']:
+                print(info['pesan'])
+            elif not info['jumlah']:
+                print('Sudah versi terbaru ({}).'.format(info['sini']))
+            else:
+                print('{} pembaruan tersedia: {} -> {}'.format(
+                    info['jumlah'], info['sini'], info['jauh']))
+                for b in info['commit']:
+                    print('   ' + b)
+                print('')
+                print('Pasang dengan: python tools/shopee_mass_upload.py perbarui --pasang')
         return
 
     if a.perintah == 'pasang-hook':

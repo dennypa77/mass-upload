@@ -220,6 +220,26 @@ tr.rinci li{margin:2px 0}
       </div>
 
       <div class="kartu">
+        <h2>Pembaruan tools</h2>
+        <div class="isi">
+          <div id="statusPerbarui" class="kecil redup">memeriksa…</div>
+          <div class="baris" style="margin-top:10px">
+            <button onclick="cekPerbarui()">Periksa pembaruan</button>
+            <button class="utama" id="tombolPasang" onclick="pasangPerbarui()"
+                    style="display:none">Pasang pembaruan</button>
+          </div>
+          <div class="arti">
+            Mengambil versi terbaru dari GitHub. Pengaturan komputer ini —
+            letak folder foto di Drive, tersimpan di <code>data/lokal.json</code> —
+            tidak ikut tertimpa.
+            <br><br>Berkas terlacak yang sedang berubah di komputer ini dicadangkan dulu ke
+            <code>data/cadangan-&lt;waktu&gt;/</code> sebelum ditimpa, jadi tidak ada yang
+            hilang diam-diam. Setelah terpasang, server menjalankan ulang sendiri.
+          </div>
+        </div>
+      </div>
+
+      <div class="kartu">
         <h2>Foto tambahan per toko</h2>
         <div class="isi">
           <div id="daftarTambahan"></div>
@@ -529,6 +549,32 @@ function imporSku(){
     api('/api/perintah',{perintah:'impor',sumber:r.path}).then(x=>{
       if(!x.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
     });
+  });
+}
+
+function cekPerbarui(){
+  const el=$('#statusPerbarui'); el.textContent='memeriksa…';
+  $('#tombolPasang').style.display='none';
+  api('/api/perbarui',{}).then(d=>{
+    if(!d.siap){el.innerHTML='<span style="color:var(--merah)">'+d.pesan+'</span>';return;}
+    if(!d.jumlah){
+      el.innerHTML='<span style="color:var(--hijau)">Sudah versi terbaru</span>'
+        +' <span class="redup">('+d.sini+')</span>';return;}
+    $('#tombolPasang').style.display='';
+    el.innerHTML='<b style="color:var(--kuning)">'+d.jumlah+' pembaruan tersedia</b>'
+      +' <span class="redup">'+d.sini+' → '+d.jauh+'</span><ul class="ringkas">'
+      +d.commit.slice(0,8).map(c=>'<li>'+c.replace(/[<>]/g,'')+'</li>').join('')+'</ul>'
+      +(d.diubah.length?'<div style="color:var(--kuning);margin-top:4px">'
+        +d.diubah.length+' berkas di komputer ini sedang berubah — akan dicadangkan dulu</div>':'');
+  });
+}
+
+function pasangPerbarui(){
+  if(!confirm('Pasang pembaruan dari GitHub?' + String.fromCharCode(10,10)
+    +'Pengaturan komputer ini tidak tertimpa. Berkas yang sedang berubah '
+    +'dicadangkan dulu ke data/cadangan-<waktu>/'))return;
+  api('/api/perbarui',{pasang:true}).then(r=>{
+    if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
   });
 }
 
@@ -1025,4 +1071,5 @@ setInterval(()=>{
 },700);
 
 muatStatus(); muatPohon(); gambarBilah(); muatPengaturan(); muatRingkasSku();
+cekPerbarui();
 </script></body></html>

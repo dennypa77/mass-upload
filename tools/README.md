@@ -26,6 +26,41 @@ Untuk melihat template yang terpasang: `python tools/shopee_mass_upload.py templ
 Template disimpan di folder `template/`. Perintah `cek` memperingatkan kalau ada template
 yang umurnya lewat 30 hari atau tidak memuat kategori yang dipakai di `config.json`.
 
+## Memasang di komputer karyawan
+
+Sekali saja, di tiap komputer:
+
+```
+git clone https://github.com/dennypa77/mass-upload.git "Mass upload shopee"
+cd "Mass upload shopee"
+pip install openpyxl pillow
+python tools/shopee_mass_upload.py pasang-hook
+```
+
+Lalu buka `WEB.bat` → tab **Sumber Data** → isi folder foto tiap jenis produk sesuai letaknya
+di komputer itu, dan tekan Simpan sumber.
+
+## Memperbarui
+
+Klik dua kali **`UPDATE.bat`**, atau tekan **Periksa pembaruan** di tab Sumber Data. Kalau ada
+yang baru, daftarnya ditampilkan dulu sebelum dipasang.
+
+Yang **tidak** ikut tertimpa saat memperbarui:
+
+| Berkas | Isi |
+|---|---|
+| `data/lokal.json` | letak folder foto di komputer itu |
+| `data/cache_folder.json` | hasil pemindaian folder |
+| `foto-upload/` | foto yang belum di-commit |
+
+Berkas terlacak yang sedang berubah di komputer itu — misalnya `data/foto.db` setelah
+memproses foto — **dicadangkan dulu** ke `data/cadangan-<waktu>/` sebelum ditimpa versi dari
+GitHub, jadi tidak ada yang hilang diam-diam.
+
+Pengaturan bersama (harga, berat, deskripsi, judul, kategori) ada di `tools/config.json` yang
+**ikut diperbarui** — jadi kalau Anda mengubahnya di sini, karyawan mendapatkannya setelah
+memperbarui.
+
 ## Sekali saja: pasang kebutuhan
 
 ```
