@@ -155,7 +155,8 @@ def baca_sku(_ingatan={}):
                 continue
             data.setdefault(baris['jenis'].upper(), OrderedDict()) \
                 .setdefault(baris['seri'], []).append(
-                    {'varian': baris['varian'], 'sku': baris['sku'], 'kode_seri': kode})
+                    {'varian': baris['varian'], 'sku': baris['sku'], 'kode_seri': kode,
+                     'foto_siap': bool(baris.get('foto_siap'))})
     if dilewati and not baca_sku._diam:
         print('[input] {} SKU dilewati sesuai abaikan_sku di config.json'.format(dilewati))
         baca_sku._diam = True
@@ -275,6 +276,31 @@ def saring_lingkup(data, lingkup):
     return hasil
 
 
+def indeks_foto_siap(_ingatan={}):
+    """{jenis: [nomor SKU yang di sheet ditandai FOTO PRODUK]} — sudah terurut.
+
+    Dipakai untuk menandai folder produk mana yang fotonya sudah dibuat, tanpa
+    perlu membuka Drive sama sekali.
+    """
+    if not os.path.exists(SKU_CSV):
+        return {}
+    cap = os.path.getmtime(SKU_CSV)
+    if _ingatan.get('cap') == cap:
+        return _ingatan['isi']
+    hasil = {}
+    with open(SKU_CSV, encoding='utf-8-sig', newline='') as f:
+        for r in csv.DictReader(f):
+            if not r.get('foto_siap'):
+                continue
+            n = nomor_sku(r.get('sku', ''))
+            if n:
+                hasil.setdefault((r.get('jenis') or '').upper(), []).append(n)
+    for v in hasil.values():
+        v.sort()
+    _ingatan['cap'], _ingatan['isi'] = cap, hasil
+    return hasil
+
+
 def dir_jenis(cfg, jenis):
     """Folder sumber di komputer ini untuk satu jenis produk.
 
@@ -302,7 +328,8 @@ def nomor_sku(sku):
 
 
 # --------------------------------------------------------------------------- impor
-JUDUL_KOLOM = {'sku': 'sku', 'varian': 'varian', 'nama produk': 'seri'}
+JUDUL_KOLOM = {'sku': 'sku', 'varian': 'varian', 'nama produk': 'seri',
+               'foto produk': 'foto_siap'}
 
 
 def _baris_tabel(rows):
@@ -351,6 +378,9 @@ def baca_tempelan(teks):
                 else rendah.index('seri')
             if 'varian' in rendah:
                 kolom['varian'] = rendah.index('varian')
+            # penanda dari sheet: foto produk SKU ini sudah dibuat atau belum
+            if 'foto produk' in rendah:
+                kolom['foto_siap'] = rendah.index('foto produk')
             mulai = i + 1
             break
 
@@ -377,9 +407,14 @@ def baca_tempelan(teks):
             continue
         if not POLA_SKU.match(sku) or not seri:
             continue
-        hasil.append({'sku': sku.upper(), 'seri': seri,
-                      'varian': sel[kolom['varian']] if kolom.get('varian') is not None
-                      and len(sel) > kolom['varian'] else sku.upper()})
+        i_siap = kolom.get('foto_siap')
+        hasil.append({
+            'sku': sku.upper(), 'seri': seri,
+            'varian': sel[kolom['varian']] if kolom.get('varian') is not None
+            and len(sel) > kolom['varian'] else sku.upper(),
+            'foto_siap': '1' if (i_siap is not None and len(sel) > i_siap
+                                 and sel[i_siap].strip()) else '',
+        })
     return hasil
 
 
@@ -392,7 +427,8 @@ def tulis_sku(cfg, catatan, gabung=True):
             for r in csv.DictReader(f):
                 if r.get('sku'):
                     lama[r['sku'].upper()] = [r.get('jenis', ''), r.get('seri', ''),
-                                              r.get('varian') or r['sku'], r['sku'].upper()]
+                                              r.get('varian') or r['sku'], r['sku'].upper(),
+                                              r.get('foto_siap', '')]
 
     baru = diperbarui = dilewati = 0
     for c in catatan:
@@ -400,7 +436,7 @@ def tulis_sku(cfg, catatan, gabung=True):
         if not jenis:
             dilewati += 1
             continue
-        isi = [jenis, c['seri'], c['varian'], c['sku']]
+        isi = [jenis, c['seri'], c['varian'], c['sku'], c.get('foto_siap', '')]
         if c['sku'] in lama:
             if lama[c['sku']] != isi:
                 diperbarui += 1
@@ -416,7 +452,7 @@ def tulis_sku(cfg, catatan, gabung=True):
     os.makedirs(os.path.dirname(SKU_CSV), exist_ok=True)
     with open(SKU_CSV, 'w', encoding='utf-8-sig', newline='') as f:
         w = csv.writer(f)
-        w.writerow(['jenis', 'seri', 'varian', 'sku'])
+        w.writerow(['jenis', 'seri', 'varian', 'sku', 'foto_siap'])
         w.writerows(sorted(lama.values(), key=lambda r: (r[0], r[3])))
     return {'ok': True, 'baru': baru, 'diperbarui': diperbarui,
             'dilewati': dilewati, 'total': len(lama)}

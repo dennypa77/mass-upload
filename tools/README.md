@@ -137,6 +137,7 @@ Log ada di bawah semua tab, tingginya bisa ditarik sendiri.
 | Kolom | Arti |
 |---|---|
 | Folder | nama folder di komputer sumber, beserta jenis produknya |
+| Foto siap (sheet) | jumlah SKU yang di Google Sheet kolom **FOTO PRODUK** sudah bertanda DONE |
 | Foto di sumber | jumlah PNG/JPG di folder itu — foto varian + foto utama, semua toko dijumlahkan |
 | SKU terdaftar | berapa SKU pada rentang nomor folder itu yang sudah ada di `data/sku.csv` |
 | Sudah di GitHub | ditulis *terunggah / tercatat*. Hanya foto yang sudah di GitHub yang URL-nya dipakai di Excel |
@@ -154,6 +155,14 @@ Status per folder:
 | `sebagian diupload` | sebagian sudah di GitHub |
 | `SKU belum diimpor` | foto ada tapi SKU-nya tidak ada di `sku.csv` — listing belum bisa dibuat |
 | `siap dibuat listing` | foto lengkap, sudah di GitHub, SKU terdaftar |
+
+### Urutan daftar folder
+
+Bawaannya folder yang fotonya **sudah ditandai DONE di Google Sheet** ditaruh paling atas,
+jadi yang siap dikerjakan langsung terlihat tanpa menggulung. Angka itu berasal dari
+`sku.csv` saja — tidak menyentuh Drive — sehingga tersedia begitu halaman dibuka.
+
+Pilihan urutan lain ada di kotak **urut**: `Foto siap dulu` (bawaan), `Nama A-Z`, `Nama Z-A`.
 
 Karena folder produknya ratusan, status tiap baris **baru dihitung ketika barisnya terlihat
 di layar**, lalu disimpan di `data/cache_folder.json` supaya kunjungan berikutnya instan.

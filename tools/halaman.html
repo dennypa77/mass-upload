@@ -115,6 +115,12 @@ tr.rinci li{margin:2px 0}
                  style="flex:1;max-width:260px" oninput="saring()">
           <label class="centang kecil"><input type="checkbox" id="hanyaFoto" onchange="saring()">
             hanya yang ada fotonya</label>
+          <span class="kecil redup">urut:</span>
+          <select id="urutan" class="pilihan" onchange="muatPohon()">
+            <option value="siap">Foto siap dulu</option>
+            <option value="az">Nama A-Z</option>
+            <option value="za">Nama Z-A</option>
+          </select>
           <div style="flex:1"></div>
           <span class="kecil redup" id="hitung"></span>
           <button onclick="muatPohon()">Muat ulang</button>
@@ -125,6 +131,7 @@ tr.rinci li{margin:2px 0}
           <thead><tr>
             <th class="pilihkotak" title="Centang folder yang mau diproses. Pilihan terbawa ke tab berikutnya"><input type="checkbox" id="pilihSemua" onclick="centangTampak(this.checked)"></th>
             <th title="Nama folder di komputer sumber, beserta jenis produknya">Folder</th>
+            <th title="Jumlah SKU yang di Google Sheet sudah ditandai DONE pada kolom FOTO PRODUK">Foto siap (sheet)</th>
             <th title="Jumlah berkas gambar (PNG/JPG) di dalam folder ini, seluruh toko dijumlahkan">Foto di sumber</th>
             <th title="Berapa SKU pada rentang nomor folder ini yang sudah terdaftar di data/sku.csv">SKU terdaftar</th>
             <th title="Berapa foto folder ini yang sudah benar-benar ada di GitHub, dari yang tercatat di database">Sudah di GitHub</th>
@@ -136,6 +143,7 @@ tr.rinci li{margin:2px 0}
       <div class="isi arti">
         <b>Arti tiap kolom</b>
         <dl>
+          <dt>Foto siap (sheet)</dt><dd>jumlah SKU yang di Google Sheet kolom <b>FOTO PRODUK</b> sudah bertanda DONE. Diambil dari sheet, tanpa membuka Drive — karena itu langsung tampil dan dipakai untuk mengurutkan daftar</dd>
           <dt>Foto di sumber</dt><dd>jumlah PNG/JPG di folder itu (foto varian + foto utama, semua toko)</dd>
           <dt>SKU terdaftar</dt><dd>berapa SKU rentang nomor itu yang sudah ada di <code>data/sku.csv</code>. Nol berarti sheet SKU-nya belum diimpor</dd>
           <dt>Sudah di GitHub</dt><dd>ditulis <i>terunggah / tercatat</i>. Hanya foto yang sudah di GitHub yang URL-nya dipakai di Excel</dd>
@@ -845,7 +853,7 @@ function muatPohon(){
     const tb=$('#pohon tbody'); tb.innerHTML=''; let total=0;
     d.jenis.forEach((j,idx)=>{
       const th=document.createElement('tr'); th.className='jenis';
-      th.innerHTML=`<td colspan="6">
+      th.innerHTML=`<td colspan="7">
         <span class="panah">▾</span><span class="ikon">🗂️</span><b>${j.jenis}</b>
         <span class="redup" style="font-weight:400">— ${j.folder.length} folder</span>
         ${j.ada?'':'<span class="tanda t-tanpasku">folder sumber tidak ditemukan</span>'}
@@ -856,14 +864,16 @@ function muatPohon(){
         saring();
       };
       tb.appendChild(th);
-      j.folder.forEach(f=>{
+      urutkanFolder(j.folder).forEach(f=>{
         total++;
         const r=document.createElement('tr'); r.className='folder';
         Object.assign(r.dataset,{jenis:j.jenis,path:f.path,dari:f.dari,sampai:f.sampai,
-                                 nama:f.nama});
+                                 nama:f.nama,siap:f.siap||0});
         r.innerHTML=`<td class="pilihkotak"><input type="checkbox" class="centangFolder"></td>
           <td><span class="ikon" style="margin-left:16px">📂</span>${f.nama}
             <span class="redup kecil">· ${j.jenis}</span></td>
+          <td>${f.siap?`<span class="tanda t-siap">${f.siap} siap</span>`
+                      :'<span class="redup kecil">—</span>'}</td>
           <td class="angka" data-k="foto">…</td>
           <td class="angka" data-k="sku"></td>
           <td class="angka" data-k="git"></td>
@@ -879,6 +889,17 @@ function muatPohon(){
     saring();
   });
 }
+// Folder produk ada ratusan. Bawaannya yang fotonya sudah siap menurut Google
+// Sheet ditaruh paling atas, supaya tidak perlu menggulung untuk mencarinya.
+function urutkanFolder(daftar){
+  const cara=($('#urutan')||{value:'siap'}).value;
+  const salinan=daftar.slice();
+  if(cara==='az')salinan.sort((a,b)=>a.nama.localeCompare(b.nama));
+  else if(cara==='za')salinan.sort((a,b)=>b.nama.localeCompare(a.nama));
+  else salinan.sort((a,b)=>(b.siap||0)-(a.siap||0)||a.nama.localeCompare(b.nama));
+  return salinan;
+}
+
 function saring(){
   const q=$('#cari').value.trim().toLowerCase();
   const hanya=$('#hanyaFoto').checked;
@@ -890,7 +911,7 @@ function saring(){
       const s=anak.dataset.status?JSON.parse(anak.dataset.status):null;
       let ok=buka;
       if(ok&&q) ok=anak.dataset.nama.toLowerCase().includes(q);
-      if(ok&&hanya) ok=!!(s&&s.foto);
+      if(ok&&hanya) ok=!!(s&&s.foto)||+anak.dataset.siap>0;
       anak.style.display=ok?'':'none';
       if(ok)tampak++;
       anak=anak.nextElementSibling;
@@ -925,7 +946,9 @@ function pilihFolder(tr){
 }
 function tulisDetail(s){
   const el=$('#detail'); if(!el)return;
+  const tr=document.querySelector('tr.folder.pilih');
   el.innerHTML=`<table style="margin:0">
+    <tr><td class="redup">Foto siap menurut sheet</td><td><b>${tr?tr.dataset.siap:0}</b> SKU</td></tr>
     <tr><td class="redup">Foto di sumber</td><td><b>${s.foto}</b></td></tr>
     <tr><td class="redup">Toko terdeteksi</td><td>${s.toko.length} (${s.toko.join(', ')||'-'})</td></tr>
     <tr><td class="redup">SKU terdaftar</td><td>${s.sku}</td></tr>

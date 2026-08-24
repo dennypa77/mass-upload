@@ -95,7 +95,14 @@ def nomor_folder(nama):
 
 
 def pohon(cfg):
-    """Daftar folder produk per jenis, dibaca dari Google Drive. Cepat — hanya nama folder."""
+    """Daftar folder produk per jenis, dibaca dari Google Drive. Cepat — hanya nama folder.
+
+    Tiap folder diberi jumlah SKU yang di Google Sheet sudah ditandai punya foto
+    produk. Angka itu berasal dari sku.csv saja, tidak menyentuh Drive, jadi bisa
+    dipakai mengurutkan daftar begitu halaman dibuka.
+    """
+    from bisect import bisect_left, bisect_right
+    siap = inti.indeks_foto_siap()
     hasil = []
     for jenis, j in cfg['jenis'].items():
         akar = inti.dir_jenis(cfg, jenis)
@@ -104,8 +111,12 @@ def pohon(cfg):
             for nama in sorted(os.listdir(akar)):
                 rentang = nomor_folder(nama)
                 if rentang and os.path.isdir(os.path.join(akar, nama)):
+                    nomor = siap.get(jenis.upper(), [])
+                    n_siap = (bisect_right(nomor, rentang[1])
+                              - bisect_left(nomor, rentang[0])) if nomor else 0
                     anak.append({'nama': nama, 'path': os.path.join(akar, nama),
-                                 'dari': rentang[0], 'sampai': rentang[1]})
+                                 'dari': rentang[0], 'sampai': rentang[1],
+                                 'siap': n_siap})
         hasil.append({'jenis': jenis, 'prefix': j['prefix_sku'], 'akar': akar,
                       'khusus': bool((j.get('path_drive') or '').strip()),
                       'ada': os.path.isdir(akar), 'folder': anak})
