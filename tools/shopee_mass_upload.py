@@ -114,14 +114,21 @@ def tulis_lokal(isi):
         json.dump(isi, f, ensure_ascii=False, indent=2)
 
 
-def baca_sku():
+def baca_sku(_ingatan={}):
     """Baca data/sku.csv -> {jenis: OrderedDict{seri: [ {varian, sku}, ... ]}}
 
     SKU yang cocok dengan pola di config.json -> abaikan_sku dilewati. Bawaannya
     varian CUSTOM, yang diupload manual dan tidak ikut mass upload.
     """
     if not os.path.exists(SKU_CSV):
-        sys.exit('File input tidak ada: {}\nBuat dulu dengan kolom: jenis,seri,varian,sku'.format(SKU_CSV))
+        sys.exit('Daftar SKU belum ada ({}).\n'
+                 'Ambil dari Google Sheet lewat tombol "Ambil dari Google Sheet", '
+                 'atau tempel manual di tab Sumber Data.'.format(SKU_CSV))
+    # daftar SKU bisa puluhan ribu baris dan dibaca berkali-kali dalam satu
+    # proses, jadi hasilnya diingat sampai berkasnya berubah
+    kunci = (os.path.getmtime(SKU_CSV), tuple(sorted(SARING.items())))
+    if _ingatan.get('kunci') == kunci:
+        return _ingatan['isi']
     try:
         pola = baca_config().get('abaikan_sku') or []
     except Exception:
@@ -155,6 +162,7 @@ def baca_sku():
     if not data:
         sys.exit('Tidak ada SKU yang cocok dengan saringan: {}'.format(
             {k: v for k, v in SARING.items() if v}))
+    _ingatan['kunci'], _ingatan['isi'] = kunci, data
     return data
 
 
@@ -412,6 +420,58 @@ def tulis_sku(cfg, catatan, gabung=True):
         w.writerows(sorted(lama.values(), key=lambda r: (r[0], r[3])))
     return {'ok': True, 'baru': baru, 'diperbarui': diperbarui,
             'dilewati': dilewati, 'total': len(lama)}
+
+
+def alamat_tab(sheet_id, tab):
+    """Alamat CSV satu tab Google Sheet, terbaca tanpa login selama sheet-nya
+    dibagikan ke siapa saja yang punya tautan."""
+    from urllib.parse import quote
+    return ('https://docs.google.com/spreadsheets/d/{}/gviz/tq?tqx=out:csv&sheet={}'
+            .format(sheet_id, quote(tab)))
+
+
+def sinkron_sku(cfg, cetak=print):
+    """Tarik daftar SKU langsung dari Google Sheet, lalu tulis ke data/sku.csv."""
+    from urllib.request import urlopen
+    from urllib.error import URLError, HTTPError
+
+    sheet = cfg.get('sku_sheet') or {}
+    sheet_id, tabs = sheet.get('id'), sheet.get('tab') or []
+    if not sheet_id or not tabs:
+        cetak('[sinkron] belum diatur. Isi sku_sheet.id dan sku_sheet.tab di config.json.')
+        return {'ok': False, 'pesan': 'Sumber Google Sheet belum diatur di config.json.'}
+
+    semua, gagal = [], []
+    for tab in tabs:
+        alamat = alamat_tab(sheet_id, tab)
+        cetak('[sinkron] mengambil tab "{}" …'.format(tab))
+        try:
+            with urlopen(alamat, timeout=120) as balas:
+                teks = balas.read().decode('utf-8', 'replace')
+        except (URLError, HTTPError) as e:
+            gagal.append('{}: {}'.format(tab, e))
+            cetak('   ! gagal: {}'.format(e))
+            continue
+        if '<html' in teks[:200].lower():
+            gagal.append('{}: sheet tidak bisa dibaca tanpa login'.format(tab))
+            cetak('   ! sheet tidak bisa dibaca tanpa login — di Google Sheet pilih '
+                  'Bagikan > Siapa saja yang memiliki link > Pelihat')
+            continue
+        baris = baca_tempelan(teks)
+        cetak('   {} SKU terbaca'.format(len(baris)))
+        semua += baris
+
+    if not semua:
+        return {'ok': False, 'pesan': 'Tidak ada SKU terbaca. ' + ' | '.join(gagal)}
+
+    hasil = tulis_sku(cfg, semua, gabung=False)
+    if hasil.get('ok'):
+        cetak('[sinkron] selesai — {} SKU tersimpan ({} dilewati karena awalan SKU '
+              'tidak dikenal)'.format(hasil['total'], hasil['dilewati']))
+        if gagal:
+            cetak('[sinkron] ! sebagian tab gagal: ' + ' | '.join(gagal))
+    hasil['gagal'] = gagal
+    return hasil
 
 
 def perintah_impor(cfg, sumber):
@@ -973,8 +1033,19 @@ def perintah_cek(cfg, data, diam=False):
     return total
 
 
+BATAS_LISTING, BATAS_BARIS = 500, 10000
+
+
 def perintah_build(cfg, data, sub=None):
     paket = kumpulkan(cfg, data)
+    besar = [(b, len(L), sum(len(x['desain']) for x in L)) for b, (_, L) in paket.items()
+             if len(L) > BATAS_LISTING or sum(len(x['desain']) for x in L) > BATAS_BARIS]
+    if besar:
+        print('[build] ! berkas berikut sangat besar dan kemungkinan ditolak Shopee:')
+        for b, n, r in besar:
+            print('     {:<46} {} listing / {} baris'.format(b[:46], n, r))
+        print('     Shopee membatasi jumlah produk per berkas. Pilih folder yang mau')
+        print('     dikerjakan di langkah 1 supaya hasilnya terpecah jadi bagian kecil.')
     tujuan = os.path.join(dir_keluaran(), sub) if sub else dir_keluaran()
     terkunci = []
     for berkas, (tpl, listings) in paket.items():
@@ -997,7 +1068,7 @@ def perintah_build(cfg, data, sub=None):
 
 def main():
     p = argparse.ArgumentParser(description='Pembuat file Shopee Mass Upload')
-    p.add_argument('perintah', choices=['impor', 'perbarui', 'template', 'pasang-hook', 'deteksi', 'unggah', 'foto', 'url', 'cek', 'build', 'semua'])
+    p.add_argument('perintah', choices=['impor', 'sinkron', 'perbarui', 'template', 'pasang-hook', 'deteksi', 'unggah', 'foto', 'url', 'cek', 'build', 'semua'])
     p.add_argument('sumber', nargs='?', help='untuk "impor": berkas ekspor SKU; untuk "unggah": folder produk')
     p.add_argument('--tanpa-push', action='store_true', help='unggah: siapkan saja, jangan push ke GitHub')
     p.add_argument('--pasang', action='store_true', help='perbarui: langsung pasang, jangan cek saja')
@@ -1015,6 +1086,10 @@ def main():
         if not a.sumber:
             sys.exit('Contoh: python tools/shopee_mass_upload.py impor "SKU.xlsx"')
         perintah_impor(cfg, a.sumber)
+        return
+
+    if a.perintah == 'sinkron':
+        sinkron_sku(cfg)
         return
 
     if a.perintah == 'perbarui':

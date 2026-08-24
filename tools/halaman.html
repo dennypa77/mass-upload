@@ -187,8 +187,11 @@ tr.rinci li{margin:2px 0}
         <div class="isi">
           <div id="statusSku" class="kecil"></div>
           <div class="kecil redup" style="margin:10px 0 4px">
-            Tempel langsung dari Google Sheet — sorot kolomnya di Sheets, salin, lalu
-            tempel di sini. Cukup kolom <b>SKU</b> dan <b>Nama Produk</b>.
+            <b>Ambil dari Google Sheet</b> menarik seluruh daftar SKU langsung dari sheet
+            yang diatur di <code>config.json</code> → <code>sku_sheet</code> — tidak perlu
+            ekspor atau tempel manual, dan semua komputer memakai sumber yang sama.
+            <br><br>Atau tempel manual: sorot kolomnya di Sheets, salin, tempel di sini.
+            Cukup kolom <b>SKU</b> dan <b>Nama Produk</b>.
           </div>
           <textarea id="tempelSku" rows="6" oninput="intipTempel()"
             placeholder="JB-0000001&#9;JIBBITZ CROCS AKRILIK CUSTOM KPOP - CORTIS SERIES&#10;JB-0000002&#9;JIBBITZ CROCS AKRILIK CUSTOM KPOP - CORTIS SERIES"></textarea>
@@ -202,6 +205,7 @@ tr.rinci li{margin:2px 0}
             <button class="utama" onclick="simpanTempel()">Simpan SKU</button>
           </div>
           <div class="baris" style="margin-top:10px">
+            <button class="utama" onclick="sinkronSku()">Ambil dari Google Sheet</button>
             <button onclick="imporSku()">Impor dari berkas Excel…</button>
             <span id="pesanSku" class="kecil redup"></span>
           </div>
@@ -501,6 +505,12 @@ function simpanSumber(){
   });
 }
 function simpanUrl(){ api('/api/config',{base_url:$('#baseurl').value}).then(muatStatus); }
+
+function sinkronSku(){
+  api('/api/sinkron_sku',{}).then(r=>{
+    if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
+  });
+}
 
 function intipTempel(){
   const teks=$('#tempelSku').value;

@@ -249,5 +249,14 @@
   ],
   "_abaikan_sku": "Pola SKU yang tidak ikut mass upload (dicocokkan sebagai regex, tanpa peka huruf besar).",
   "salinan_serentak": 8,
-  "_salinan_serentak": "Berapa foto disalin bersamaan dari Drive. Naikkan kalau koneksi cepat, turunkan kalau berat."
+  "_salinan_serentak": "Berapa foto disalin bersamaan dari Drive. Naikkan kalau koneksi cepat, turunkan kalau berat.",
+  "sku_sheet": {
+    "id": "1vv8mOh4W35DtLP7oLp9j17ErDmXyCjgW36xBxvJpWwM",
+    "tab": [
+      "sku jibbitz",
+      "sku pin akrilik",
+      "sku pin button"
+    ]
+  },
+  "_sku_sheet": "Google Sheet sumber daftar SKU. Sheet harus dibagikan: Siapa saja yang memiliki link > Pelihat."
 }

@@ -455,6 +455,10 @@ class Penangan(BaseHTTPRequestHandler):
                     return self._kirim({'batal': True})
                 return self._kirim({'mulai': di_latar(
                     'pasang template', lambda: inti.pasang_template(cfg, berkas))})
+            if self.path == '/api/sinkron_sku':
+                return self._kirim({'mulai': di_latar(
+                    'sinkron SKU', lambda: (inti.sinkron_sku(cfg, catat),
+                                            SINGGAHAN.clear(), simpan_cache()))})
             if self.path == '/api/tempel_sku':
                 catatan = inti.baca_tempelan(badan.get('teks') or '')
                 if badan.get('intip'):

@@ -99,6 +99,20 @@ def pasang(inti, cetak=print):
         cetak('[perbarui] gagal memasang:\n' + keluaran)
         return dict(info, berhasil=False)
 
+    # Isi folder data/ milik komputer ini: daftar SKU, database foto, cache.
+    # Semuanya hasil kerja setempat, jadi dikembalikan setelah kode diperbarui.
+    if info['diubah']:
+        pulih = []
+        for rel in info['diubah']:
+            if not rel.replace('\\', '/').startswith('data/'):
+                continue
+            asal = os.path.join(folder, rel.replace('/', os.sep))
+            if os.path.exists(asal):
+                shutil.copy2(asal, os.path.join(inti.AKAR, rel.replace('/', os.sep)))
+                pulih.append(rel)
+        if pulih:
+            cetak('[perbarui] dikembalikan (milik komputer ini): {}'.format(', '.join(pulih)))
+
     _, sekarang = _git(inti.AKAR, ['rev-parse', '--short', 'HEAD'])
     cetak('[perbarui] selesai, sekarang di {}'.format(sekarang.strip()))
     cetak('[perbarui] pengaturan komputer ini (data/lokal.json) tidak tersentuh')

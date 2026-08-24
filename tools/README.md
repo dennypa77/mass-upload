@@ -460,7 +460,31 @@ Alur uji yang disarankan: `url` untuk satu seri → push folder fotonya → buka
 di browser untuk memastikan jsDelivr sudah melayaninya → `build` → upload satu berkas Excel
 ke Shopee → cek fotonya muncul. Kalau beres, baru lanjut ke sisanya.
 
-## Mengisi daftar SKU — tempel langsung dari Google Sheet
+## Mengisi daftar SKU — ambil langsung dari Google Sheet
+
+Cara utama: tombol **Ambil dari Google Sheet** di tab Sumber Data, atau
+
+```
+python tools/shopee_mass_upload.py sinkron
+```
+
+Sumbernya diatur sekali di `tools/config.json`:
+
+```json
+"sku_sheet": {
+  "id": "1vv8mOh4W35DtLP7oLp9j17ErDmXyCjgW36xBxvJpWwM",
+  "tab": ["sku jibbitz", "sku pin akrilik", "sku pin button"]
+}
+```
+
+Syaratnya sheet dibagikan **Siapa saja yang memiliki link → Pelihat**. Tidak perlu login,
+tidak perlu ekspor berkas, dan semua komputer menarik dari sumber yang sama — jadi tidak ada
+lagi daftar SKU yang berbeda antar komputer.
+
+`data/sku.csv` sekarang hanya salinan setempat hasil sinkron; berkas itu tidak lagi ikut git,
+jadi tidak bisa tertimpa saat memperbarui.
+
+## Alternatif: tempel manual dari Google Sheet
 
 Cara tercepat, tanpa ekspor berkas: di Google Sheet sorot kolom **SKU** dan **Nama Produk**,
 salin, lalu tempel ke kotak di tab **Sumber Data → Daftar SKU**. Jumlah SKU yang terbaca
