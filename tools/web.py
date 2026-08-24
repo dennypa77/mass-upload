@@ -466,6 +466,34 @@ class Penangan(BaseHTTPRequestHandler):
                     return self._kirim({'batal': True})
                 return self._kirim({'mulai': di_latar(
                     'pasang template', lambda: inti.pasang_template(cfg, berkas))})
+            if self.path == '/api/r2':
+                lokal = inti.baca_lokal()
+                r = (lokal.get('penyimpanan') or {}).get('r2') or {}
+                if badan.get('simpan'):
+                    lokal.setdefault('penyimpanan', {}).setdefault('r2', {}).update(
+                        akses=(badan.get('akses') or '').strip() or None,
+                        rahasia=(badan.get('rahasia') or '').strip() or None)
+                    inti.tulis_lokal(lokal)
+                    catat('[ui] kunci R2 disimpan di data/lokal.json')
+                    r = lokal['penyimpanan']['r2']
+                cfg2 = inti.baca_config()
+                p = (cfg2.get('penyimpanan') or {})
+                uji = None
+                if badan.get('uji'):
+                    sys.path.insert(0, os.path.join(inti.AKAR, 'tools'))
+                    import r2 as modul_r2
+                    try:
+                        klien = modul_r2.dari_config(cfg2)
+                        uji = {'ok': True, 'jumlah': len(klien.daftar('foto-upload/'))}
+                    except Exception as e:
+                        uji = {'ok': False, 'pesan': str(e)[:200]}
+                return self._kirim({
+                    'mode': (p.get('mode') or 'github'),
+                    'bucket': (p.get('r2') or {}).get('bucket'),
+                    'domain': (p.get('r2') or {}).get('domain'),
+                    'ada_kunci': bool(r.get('akses') and r.get('rahasia')),
+                    'akses': (r.get('akses') or '')[:6] + '…' if r.get('akses') else '',
+                    'uji': uji})
             if self.path == '/api/sinkron_sku':
                 return self._kirim({'mulai': di_latar(
                     'sinkron SKU', lambda: (inti.sinkron_sku(cfg, catat),

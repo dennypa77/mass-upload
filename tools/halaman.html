@@ -232,6 +232,29 @@ tr.rinci li{margin:2px 0}
       </div>
 
       <div class="kartu">
+        <h2>Tempat foto (Cloudflare R2)</h2>
+        <div class="isi">
+          <div id="statusR2" class="kecil redup">memeriksa…</div>
+          <div class="baris" style="margin-top:10px">
+            <input type="text" id="r2akses" placeholder="Access Key ID" style="flex:1">
+            <input type="password" id="r2rahasia" placeholder="Secret Access Key" style="flex:1">
+          </div>
+          <div class="baris" style="margin-top:8px">
+            <button class="utama" onclick="simpanR2()">Simpan kunci</button>
+            <button onclick="ujiR2()">Uji koneksi</button>
+            <span id="pesanR2" class="kecil redup"></span>
+          </div>
+          <div class="arti">
+            Kunci ini <b>hanya perlu di komputer yang mengunggah foto</b>. Komputer yang
+            cuma membuat berkas Excel tidak perlu — URL foto dibaca dari
+            <code>data/foto_r2.csv</code> yang ikut diperbarui.
+            <br><br>Disimpan di <code>data/lokal.json</code>, tidak ikut ke GitHub.
+            Ambil kuncinya di Cloudflare → R2 → Manage API Tokens.
+          </div>
+        </div>
+      </div>
+
+      <div class="kartu">
         <h2>Pembaruan tools</h2>
         <div class="isi">
           <div id="statusPerbarui" class="kecil redup">memeriksa…</div>
@@ -569,6 +592,33 @@ function imporSku(){
     });
   });
 }
+
+function muatR2(uji){
+  api('/api/r2',uji?{uji:true}:{}).then(d=>{
+    let h=`Mode: <b>${d.mode==='r2'?'Cloudflare R2':'GitHub + jsDelivr'}</b>`;
+    if(d.mode==='r2'){
+      h+=` · bucket <code>${d.bucket||'-'}</code> · domain <code>${d.domain||'-'}</code><br>`;
+      h+=d.ada_kunci
+        ? `<span style="color:var(--hijau)">kunci tersimpan (${d.akses})</span>`
+        : '<span style="color:var(--kuning)">belum ada kunci — hanya bisa membuat Excel, '
+          +'tidak bisa mengunggah foto</span>';
+    }
+    if(d.uji)h+=d.uji.ok
+      ? ` <span style="color:var(--hijau)">· koneksi ok, ${d.uji.jumlah} foto di bucket</span>`
+      : ` <span style="color:var(--merah)">· gagal: ${d.uji.pesan}</span>`;
+    $('#statusR2').innerHTML=h;
+    $('#pesanR2').textContent='';
+  });
+}
+function simpanR2(){
+  const a=$('#r2akses').value.trim(), r=$('#r2rahasia').value.trim();
+  if(!a||!r){alert('Isi kedua kotaknya.');return;}
+  $('#pesanR2').textContent='menyimpan…';
+  api('/api/r2',{simpan:true,akses:a,rahasia:r,uji:true}).then(()=>{
+    $('#r2akses').value=''; $('#r2rahasia').value=''; muatR2(true);
+  });
+}
+function ujiR2(){ $('#pesanR2').textContent='menguji…'; muatR2(true); }
 
 function cekPerbarui(){
   const el=$('#statusPerbarui'); el.textContent='memeriksa…';
@@ -1123,6 +1173,6 @@ setInterval(()=>{
   }).catch(()=>{});
 },700);
 
-muatStatus(); muatPohon(); gambarBilah(); muatPengaturan(); muatRingkasSku();
+muatStatus(); muatPohon(); gambarBilah(); muatPengaturan(); muatRingkasSku(); muatR2();
 cekPerbarui();
 </script></body></html>

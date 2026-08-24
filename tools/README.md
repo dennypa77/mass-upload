@@ -368,14 +368,17 @@ Foto disimpan di bucket R2 dan disajikan lewat domain sendiri
 ```
 
 **Access Key ID dan Secret Access Key tidak ditaruh di situ.** `config.json` ikut ke GitHub
-yang public, jadi kuncinya disimpan di `data/lokal.json` yang tidak dilacak git:
+yang public, jadi kuncinya disimpan di `data/lokal.json` yang tidak dilacak git.
 
-```json
-"penyimpanan": { "r2": { "akses": "...", "rahasia": "..." } }
-```
+Cara mengisinya: tab **Sumber Data → Tempat foto (Cloudflare R2)**, tempel Access Key ID dan
+Secret Access Key, tekan **Simpan kunci**. Tombol **Uji koneksi** memastikan kuncinya benar
+dan menampilkan berapa foto yang ada di bucket. Tidak perlu menyunting berkas JSON.
 
 Hanya komputer yang **mengunggah** foto yang butuh kunci itu. Komputer yang cuma membuat
 Excel tidak perlu — URL-nya dibaca dari `data/foto_r2.csv`, daftar bersama yang ikut git.
+
+Foto **tidak lagi disimpan di repo git**. `foto-upload/` sekarang hanya tempat singgah
+sebelum diunggah ke R2, dan tidak ikut ke GitHub.
 
 Daftar itu diperbarui otomatis setiap kali menjalankan `migrasi-r2`, dan perlu di-commit
 supaya komputer lain ikut memakainya.
