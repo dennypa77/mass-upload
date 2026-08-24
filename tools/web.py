@@ -377,12 +377,18 @@ class Penangan(BaseHTTPRequestHandler):
                                   badan['dari'], badan['sampai'], badan.get('segar'))
                 return self._kirim(s)
             if self.path == '/api/deteksi':
-                temuan, tanpa_seri, tak = modul_unggah.deteksi(inti, cfg, badan['path'])
+                temuan, tanpa_seri, tak, survei = modul_unggah.deteksi(
+                    inti, cfg, badan['path'])
                 rekap = [{'toko': k[0], 'jenis': k[1], 'seri': k[2], 'n': v}
                          for k, v in sorted(modul_unggah._rekap(temuan).items())]
                 return self._kirim({'jumlah': len(temuan), 'rekap': rekap,
                                     'tanpa_seri': sorted(set(tanpa_seri))[:10],
                                     'dilewati': len(tak),
+                                    'survei': [{'folder': os.path.relpath(s['folder'],
+                                                                         badan['path']),
+                                                'gambar': s['gambar'], 'toko': s['toko'],
+                                                'contoh': s['contoh']} for s in survei[:8]],
+                                    'toko_sah': [t['nama'] for t in cfg['toko']],
                                     'contoh': temuan[0]['path_repo'] if temuan else None})
             if self.path == '/api/unggah':
                 path, push = badan['path'], bool(badan.get('push', True))

@@ -101,6 +101,28 @@ def periksa_akses(inti):
     return False, pesan
 
 
+def kenali_toko(cfg, dirpath):
+    """Tentukan folder itu milik toko mana, dari salah satu komponen path-nya.
+
+    Yang dikenali:
+        TOKO 1 / toko_2 / Toko3 / FOTO_1      -> nomor toko langsung
+        Graphica Key / kaitin.aja             -> dicocokkan ke nama toko di config
+    """
+    bagian = os.path.normpath(dirpath).split(os.sep)
+    for potong in bagian[::-1]:
+        potong = potong.strip()
+        m = re.match(r'^(?:toko|foto|shop|store)[\s_.-]*(\d+)$', potong, re.I)
+        if m:
+            return 'toko' + m.group(1)
+    # cocokkan dengan nama toko di config, mis. folder bernama "Graphica Key"
+    for potong in bagian[::-1]:
+        rapi = re.sub(r'[^a-z0-9]', '', potong.lower())
+        for tk in cfg['toko']:
+            if rapi and rapi == re.sub(r'[^a-z0-9]', '', tk['nama'].lower()):
+                return tk['folder_foto']
+    return None
+
+
 def deteksi(inti, cfg, folder):
     """Telusuri folder, kenali tiap foto: toko, jenis, seri, dan nama tujuannya.
 
@@ -125,19 +147,15 @@ def deteksi(inti, cfg, folder):
     except SystemExit:
         pass
 
-    temuan, tanpa_seri, tak_dikenal = [], [], []
+    temuan, tanpa_seri, tak_dikenal, survei = [], [], [], []
     for dirpath, _, berkas in os.walk(folder):
         gambar = [f for f in sorted(berkas) if f.lower().endswith(inti.EKSTENSI)]
         if not gambar:
             continue
 
-        # toko diambil dari komponen path yang berpola "TOKO 1" / "toko_2" / "FOTO_3"
-        toko = None
-        for bagian in os.path.normpath(dirpath).split(os.sep)[::-1]:
-            m = re.match(r'^(?:toko|foto)[\s_-]*(\d+)$', bagian.strip(), re.I)
-            if m:
-                toko = 'toko' + m.group(1)
-                break
+        toko = kenali_toko(cfg, dirpath)
+        survei.append({'folder': dirpath, 'gambar': len(gambar), 'toko': toko,
+                       'contoh': gambar[:3]})
         if not toko:
             tak_dikenal.append('{} (folder toko tidak dikenali)'.format(dirpath))
             continue
@@ -176,7 +194,7 @@ def deteksi(inti, cfg, folder):
                 'nama_tujuan': nama, 'slug': slug,
                 'path_repo': 'foto-upload/{}/{}/{}'.format(toko, slug, nama),
             })
-    return temuan, tanpa_seri, tak_dikenal
+    return temuan, tanpa_seri, tak_dikenal, survei
 
 
 def _rekap(temuan):
@@ -225,11 +243,9 @@ def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
         if lapor:
             lapor(tahap, n, total)
 
-    temuan, tanpa_seri, tak_dikenal = deteksi(inti, cfg, folder)
+    temuan, tanpa_seri, tak_dikenal, survei = deteksi(inti, cfg, folder)
     if not temuan:
-        print('[unggah] tidak ada foto yang dikenali di folder itu')
-        for t in tak_dikenal[:5]:
-            print('   ! ' + t)
+        jelaskan_gagal(cfg, folder, survei, tak_dikenal)
         return
 
     if push:
@@ -488,9 +504,44 @@ def _kirim(inti, db, path_repo, pesan, tandai=True, paksa=False):
         print('[tambahan] terkirim')
 
 
+def jelaskan_gagal(cfg, folder, survei, tak_dikenal):
+    """Terangkan kenapa tidak ada foto yang dikenali, bukan sekadar bilang gagal."""
+    print('[unggah] tidak ada foto yang dikenali di folder itu')
+    print('   folder: {}'.format(folder))
+    if not survei:
+        print('   Tidak ada satu pun berkas gambar di folder ini maupun sub-foldernya.')
+        print('   Kalau foldernya ada di Google Drive, mungkin isinya belum tersinkron —')
+        print('   buka foldernya sekali di File Explorer, tunggu sebentar, lalu coba lagi.')
+        return
+
+    print('   Yang ditemukan:')
+    for s in survei[:8]:
+        rel = os.path.relpath(s['folder'], folder)
+        print('     {:<42} {} gambar  toko: {}'.format(
+            (rel if rel != '.' else '(folder ini sendiri)')[:42], s['gambar'],
+            s['toko'] or 'TIDAK DIKENALI'))
+        print('        contoh berkas: {}'.format(', '.join(s['contoh'])))
+    if len(survei) > 8:
+        print('     ... dan {} folder lain'.format(len(survei) - 8))
+
+    if all(not s['toko'] for s in survei):
+        print('   Masalahnya: nama folder toko tidak dikenali.')
+        print('   Tools mencari folder bernama seperti: TOKO 1, Toko_2, FOTO_3,')
+        print('   atau persis nama tokonya: {}'.format(
+            ', '.join(t['nama'] for t in cfg['toko'])))
+        print('   Perbaiki nama foldernya di Drive, atau pilih folder yang lebih dalam.')
+    else:
+        print('   Folder tokonya dikenali, tapi nama berkasnya tidak.')
+        print('   Nama berkas harus berupa kode SKU (mis. JB-0000101.png)')
+        print('   atau foto utama: {}'.format(', '.join(cfg['foto']['nama_foto_utama'])))
+
+
 def lapor_deteksi(inti, cfg, folder):
     """Tampilkan hasil deteksi saja, tanpa menyalin/mengunggah apa pun."""
-    temuan, tanpa_seri, tak_dikenal = deteksi(inti, cfg, folder)
+    temuan, tanpa_seri, tak_dikenal, survei = deteksi(inti, cfg, folder)
+    if not temuan:
+        jelaskan_gagal(cfg, folder, survei, tak_dikenal)
+        return
     print('[deteksi] folder : {}'.format(os.path.abspath(folder)))
     print('[deteksi] {} foto dikenali, {} berkas dilewati'.format(len(temuan), len(tak_dikenal)))
     for (tk, jn, sr), n in sorted(_rekap(temuan).items()):

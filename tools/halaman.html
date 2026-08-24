@@ -928,8 +928,28 @@ function deteksi(){
   if(!pilih)return;
   $('#detail').textContent='mendeteksi…';
   api('/api/deteksi',{path:pilih.path}).then(d=>{
-    if(!d.jumlah){$('#detail').innerHTML=
-      `<span style="color:var(--merah)">Tidak ada foto yang dikenali (${d.dilewati} berkas dilewati).</span>`;return;}
+    if(!d.jumlah){
+      let h='<span style="color:var(--merah)"><b>Tidak ada foto yang dikenali.</b></span>';
+      if(!d.survei||!d.survei.length){
+        h+='<div class="kecil redup" style="margin-top:6px">Tidak ada berkas gambar di '
+          +'folder ini maupun sub-foldernya. Kalau ada di Google Drive, mungkin belum '
+          +'tersinkron — buka foldernya sekali di File Explorer lalu coba lagi.</div>';
+      }else{
+        h+='<div class="kecil redup" style="margin-top:6px">Yang ditemukan:</div><ul class="ringkas">'
+          +d.survei.map(s=>`<li>${s.folder==='.'?'(folder ini sendiri)':s.folder} — `
+            +`${s.gambar} gambar, toko: ${s.toko||'<span style="color:var(--merah)">tidak dikenali</span>'}`
+            +`<br><span class="redup">contoh: ${s.contoh.join(', ')}</span></li>`).join('')+'</ul>';
+        if(d.survei.every(s=>!s.toko)){
+          h+='<div class="kecil" style="color:var(--kuning)">Nama folder toko tidak dikenali. '
+            +'Tools mencari folder bernama TOKO 1 / Toko_2 / FOTO_3, atau persis nama toko: '
+            +(d.toko_sah||[]).join(', ')+'</div>';
+        }else{
+          h+='<div class="kecil" style="color:var(--kuning)">Folder tokonya dikenali, tapi nama '
+            +'berkasnya tidak. Nama berkas harus kode SKU (mis. JB-0000101.png) atau '
+            +'foto1/2/3.png</div>';
+        }
+      }
+      $('#detail').innerHTML=h;return;}
     let h=`<b>${d.jumlah} foto dikenali</b><ul class="ringkas">`;
     d.rekap.forEach(r=>h+=`<li>${r.toko} · ${r.jenis} · ${r.seri} — ${r.n} foto</li>`);
     h+='</ul>';
