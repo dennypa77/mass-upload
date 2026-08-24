@@ -423,7 +423,12 @@ menimpa yang kemarin, jadi bisa dicicil per folder.
 | `diunggah` | `1` kalau sudah benar-benar ada di GitHub |
 | `waktu` | kapan diproses |
 
-**`build` mengambil URL dari database ini.** Kalau database belum ada, tools jatuh ke cara
+**URL foto diambil dari isi repo, bukan hanya dari database.** Apa pun yang terlacak git
+di `foto-upload/` pasti sudah ada di GitHub, siapa pun yang mengunggahnya — jadi foto yang
+diunggah rekan dari komputer lain tetap terbaca. Database dipakai sebagai pelengkap, karena
+isinya hanya mencatat pekerjaan komputer itu sendiri.
+
+**`build` mengambil URL dari kedua sumber itu.** Kalau database belum ada, tools jatuh ke cara
 lama (memindai `foto-upload/` + `base_url`), jadi tetap jalan.
 
 Perintah `url` mengekspor isi database ke CSV (`data/url_foto.csv` + per toko) untuk dilihat

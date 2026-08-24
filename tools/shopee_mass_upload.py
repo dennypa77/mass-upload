@@ -988,22 +988,58 @@ def periksa(cfg, listings, wajib):
     return pesan
 
 
-def peta_url_db():
-    """{toko: {KUNCI: url}} dari database foto. Kosong kalau database belum ada."""
-    if not os.path.exists(DB_PATH):
+def peta_url_repo(cfg):
+    """{toko: {KUNCI: url}} dari berkas foto yang benar-benar ada di dalam repo.
+
+    Ini sumber yang paling bisa dipercaya: apa pun yang terlacak git di
+    foto-upload/ pasti sudah ada di GitHub, siapa pun yang mengunggahnya.
+    Database foto hanya mencatat pekerjaan komputer ini, jadi foto yang
+    diunggah rekan dari komputer lain tidak ada di sana.
+    """
+    base = (cfg.get('foto', {}).get('base_url') or '').rstrip('/')
+    if not base:
         return {}
-    sys.path.insert(0, os.path.join(AKAR, 'tools'))
-    import gudang
-    db = gudang.buka(DB_PATH)
-    try:
-        peta = gudang.peta_url(db)
-        tertunda = gudang.belum_terunggah(db)
+    import subprocess
+    hasil = subprocess.run(['git', 'ls-files', 'foto-upload'], cwd=AKAR,
+                           capture_output=True, text=True, encoding='utf-8',
+                           errors='replace')
+    if hasil.returncode:
+        return {}
+    peta = {}
+    for rel in (hasil.stdout or '').splitlines():
+        bagian = rel.split('/')
+        if len(bagian) < 3 or not rel.lower().endswith(EKSTENSI):
+            continue
+        kunci = os.path.splitext(bagian[-1])[0].upper()
+        peta.setdefault(bagian[1], {})[kunci] = base + '/' + rel
+    return peta
+
+
+def peta_url_db(cfg=None):
+    """Gabungan URL dari isi repo dan dari database foto komputer ini."""
+    peta = peta_url_repo(cfg or {})
+    dari_repo = sum(len(v) for v in peta.values())
+
+    if os.path.exists(DB_PATH):
+        sys.path.insert(0, os.path.join(AKAR, 'tools'))
+        import gudang
+        db = gudang.buka(DB_PATH)
+        try:
+            tambahan = 0
+            for toko, isi in gudang.peta_url(db).items():
+                for kunci, tautan in isi.items():
+                    if kunci not in peta.setdefault(toko, {}):
+                        peta[toko][kunci] = tautan
+                        tambahan += 1
+            tertunda = gudang.belum_terunggah(db)
+        finally:
+            db.close()
         if tertunda:
             print('[info] {} foto sudah disalin tapi BELUM di-push ke GitHub -> '
                   'URL-nya belum dipakai di Excel'.format(tertunda))
-        return peta
-    finally:
-        db.close()
+    if dari_repo:
+        print('[info] {} foto terbaca dari isi repo'.format(dari_repo))
+    return peta
 
 
 def kumpulkan(cfg, data):
@@ -1012,7 +1048,7 @@ def kumpulkan(cfg, data):
     URL foto diambil dari database (hasil perintah "unggah"). Kalau database
     belum ada, jatuh ke cara lama: memindai foto-upload/ + base_url.
     """
-    dari_db = peta_url_db()
+    dari_db = peta_url_db(cfg)
     if dari_db:
         n = sum(len(v) for v in dari_db.values())
         print('[info] URL foto diambil dari database: {} foto'.format(n))
