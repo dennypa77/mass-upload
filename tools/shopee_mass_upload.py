@@ -988,6 +988,75 @@ def periksa(cfg, listings, wajib):
     return pesan
 
 
+def mode_penyimpanan(cfg):
+    return ((cfg.get('penyimpanan') or {}).get('mode') or 'github').lower()
+
+
+def peta_url_r2(cfg, _ingatan={}):
+    """{toko: {KUNCI: url}} dari isi bucket R2.
+
+    Sama perannya dengan daftar berkas git pada mode GitHub: apa pun yang ada
+    di bucket pasti sudah bisa diakses Shopee, siapa pun yang mengunggahnya.
+    """
+    sys.path.insert(0, os.path.join(AKAR, 'tools'))
+    import r2 as modul_r2
+    try:
+        klien = modul_r2.dari_config(cfg)
+    except modul_r2.Galat as e:
+        print('[info] R2: {}'.format(e))
+        return {}
+    if not klien:
+        return {}
+    if _ingatan.get('waktu', 0) > time.time() - 60:
+        return _ingatan['isi']
+    peta = {}
+    try:
+        for kunci in klien.daftar('foto-upload/'):
+            bagian = kunci.split('/')
+            if len(bagian) < 3 or not kunci.lower().endswith(EKSTENSI):
+                continue
+            peta.setdefault(bagian[1], {})[
+                os.path.splitext(bagian[-1])[0].upper()] = klien.alamat(kunci)
+    except modul_r2.Galat as e:
+        print('[info] gagal membaca isi bucket R2: {}'.format(e))
+        return {}
+    _ingatan['waktu'], _ingatan['isi'] = time.time(), peta
+    return peta
+
+
+MANIFEST_R2 = os.path.join(AKAR, 'data', 'foto_r2.csv')
+
+
+def tulis_manifest_r2(cfg, kunci_url):
+    """Simpan daftar "kunci -> URL" ke berkas teks yang ikut git.
+
+    Membaca isi bucket butuh kunci akses, sedangkan karyawan tidak perlu — dan
+    sebaiknya tidak — memilikinya. Daftar ini dibagikan lewat git supaya semua
+    komputer bisa menyusun URL tanpa kredensial apa pun.
+    """
+    os.makedirs(os.path.dirname(MANIFEST_R2), exist_ok=True)
+    with open(MANIFEST_R2, 'w', encoding='utf-8-sig', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['path', 'url'])
+        w.writerows(sorted(kunci_url.items()))
+    return len(kunci_url)
+
+
+def baca_manifest_r2(cfg):
+    """{toko: {KUNCI: url}} dari daftar bersama, tanpa perlu kunci akses."""
+    if not os.path.exists(MANIFEST_R2):
+        return {}
+    peta = {}
+    with open(MANIFEST_R2, encoding='utf-8-sig', newline='') as f:
+        for r in csv.DictReader(f):
+            bagian = (r.get('path') or '').split('/')
+            if len(bagian) < 3 or not r.get('url'):
+                continue
+            peta.setdefault(bagian[1], {})[
+                os.path.splitext(bagian[-1])[0].upper()] = r['url']
+    return peta
+
+
 def peta_url_repo(cfg):
     """{toko: {KUNCI: url}} dari berkas foto yang benar-benar ada di dalam repo.
 
@@ -1016,9 +1085,22 @@ def peta_url_repo(cfg):
 
 
 def peta_url_db(cfg=None):
-    """Gabungan URL dari isi repo dan dari database foto komputer ini."""
-    peta = peta_url_repo(cfg or {})
-    dari_repo = sum(len(v) for v in peta.values())
+    """Gabungan URL dari tempat foto disimpan dan dari database komputer ini."""
+    cfg = cfg or {}
+    if mode_penyimpanan(cfg) == 'r2':
+        peta = baca_manifest_r2(cfg)
+        if peta:
+            print('[info] {} foto terbaca dari daftar R2 bersama'.format(
+                sum(len(v) for v in peta.values())))
+        else:
+            peta = peta_url_r2(cfg)
+            if peta:
+                print('[info] {} foto terbaca langsung dari bucket R2'.format(
+                    sum(len(v) for v in peta.values())))
+        dari_repo = 0
+    else:
+        peta = peta_url_repo(cfg)
+        dari_repo = sum(len(v) for v in peta.values())
 
     if os.path.exists(DB_PATH):
         sys.path.insert(0, os.path.join(AKAR, 'tools'))
@@ -1034,7 +1116,7 @@ def peta_url_db(cfg=None):
             tertunda = gudang.belum_terunggah(db)
         finally:
             db.close()
-        if tertunda:
+        if tertunda and mode_penyimpanan(cfg) != 'r2':
             print('[info] {} foto sudah disalin tapi BELUM di-push ke GitHub -> '
                   'URL-nya belum dipakai di Excel'.format(tertunda))
     if dari_repo:
@@ -1140,7 +1222,7 @@ def perintah_build(cfg, data, sub=None):
 
 def main():
     p = argparse.ArgumentParser(description='Pembuat file Shopee Mass Upload')
-    p.add_argument('perintah', choices=['impor', 'sinkron', 'perbarui', 'template', 'pasang-hook', 'deteksi', 'unggah', 'foto', 'url', 'cek', 'build', 'semua'])
+    p.add_argument('perintah', choices=['impor', 'sinkron', 'migrasi-r2', 'perbarui', 'template', 'pasang-hook', 'deteksi', 'unggah', 'foto', 'url', 'cek', 'build', 'semua'])
     p.add_argument('sumber', nargs='?', help='untuk "impor": berkas ekspor SKU; untuk "unggah": folder produk')
     p.add_argument('--tanpa-push', action='store_true', help='unggah: siapkan saja, jangan push ke GitHub')
     p.add_argument('--pasang', action='store_true', help='perbarui: langsung pasang, jangan cek saja')
@@ -1158,6 +1240,11 @@ def main():
         if not a.sumber:
             sys.exit('Contoh: python tools/shopee_mass_upload.py impor "SKU.xlsx"')
         perintah_impor(cfg, a.sumber)
+        return
+
+    if a.perintah == 'migrasi-r2':
+        import unggah as modul_unggah
+        modul_unggah.migrasi_r2(sys.modules[__name__], cfg)
         return
 
     if a.perintah == 'sinkron':

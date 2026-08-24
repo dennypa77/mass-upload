@@ -14,6 +14,7 @@ import os, re, subprocess, sys, threading, time
 from concurrent.futures import ThreadPoolExecutor
 
 import gudang
+import r2 as modul_r2
 
 BATAS_KIRIM = 40 * 1024 * 1024      # ukuran maks. satu commit sebelum di-push
 COBA_ULANG = 3
@@ -223,6 +224,96 @@ def _mb(byte):
     return byte / 1024 ** 2
 
 
+def migrasi_r2(inti, cfg, cetak=print):
+    """Unggah semua foto di foto-upload/ ke R2, lalu tulis daftar URL bersama."""
+    from concurrent.futures import ThreadPoolExecutor
+    klien = modul_r2.dari_config(cfg)
+    if not klien:
+        cetak('[migrasi] mode penyimpanan bukan r2')
+        return
+
+    lokal = []
+    for dp, _, berkas in os.walk(inti.DIR_FOTO):
+        for f in berkas:
+            if f.lower().endswith(inti.EKSTENSI):
+                penuh = os.path.join(dp, f)
+                lokal.append((os.path.relpath(penuh, inti.AKAR).replace(os.sep, '/'), penuh))
+    cetak('[migrasi] {} foto ada di komputer ini'.format(len(lokal)))
+
+    sudah = set(klien.daftar('foto-upload/'))
+    cetak('[migrasi] {} sudah ada di bucket'.format(len(sudah)))
+    sisa = [x for x in lokal if x[0] not in sudah]
+    cetak('[migrasi] {} perlu diunggah'.format(len(sisa)))
+
+    hitung = {'n': 0, 'gagal': 0}
+    kunci = threading.Lock()
+
+    def satu(pasang):
+        jalur, penuh = pasang
+        try:
+            klien.unggah(jalur, penuh)
+        except Exception as e:
+            with kunci:
+                hitung['gagal'] += 1
+                if hitung['gagal'] <= 3:
+                    cetak('   ! gagal {}: {}'.format(jalur, e))
+            return
+        with kunci:
+            hitung['n'] += 1
+            n = hitung['n']
+        if n % 50 == 0 or n == len(sisa):
+            cetak('      {}/{} terunggah'.format(n, len(sisa)))
+
+    if sisa:
+        with ThreadPoolExecutor(max_workers=int(cfg.get('salinan_serentak') or 8)) as kolam:
+            list(kolam.map(satu, sisa))
+
+    semua = klien.daftar('foto-upload/')
+    jumlah = inti.tulis_manifest_r2(cfg, {k: klien.alamat(k) for k in semua})
+    cetak('[migrasi] selesai — {} gagal, {} foto tercatat di data/foto_r2.csv'.format(
+        hitung['gagal'], jumlah))
+    cetak('[migrasi] commit berkas itu supaya komputer lain ikut memakainya')
+
+
+def kirim_r2(inti, cfg, db, temuan, maju):
+    """Unggah foto ke Cloudflare R2, beberapa berkas sekaligus."""
+    from concurrent.futures import ThreadPoolExecutor
+    klien = modul_r2.dari_config(cfg)
+    total_mb = _mb(sum(t['ukuran'] for t in temuan))
+    print('[3/3] mengunggah {} foto ({:.1f} MB) ke Cloudflare R2 …'.format(
+        len(temuan), total_mb))
+
+    hitung = {'n': 0, 'gagal': 0}
+    kunci_hitung = threading.Lock()
+    berhasil = []
+
+    def satu(t):
+        try:
+            klien.unggah(t['path_repo'], t['file_lokal'])
+            t['url'] = klien.alamat(t['path_repo'])
+            with kunci_hitung:
+                berhasil.append(t)
+        except Exception as e:
+            with kunci_hitung:
+                hitung['gagal'] += 1
+                if hitung['gagal'] <= 3:
+                    print('   ! gagal {}: {}'.format(t['nama_tujuan'], e))
+        with kunci_hitung:
+            hitung['n'] += 1
+            n = hitung['n']
+        maju('unggah', n, len(temuan))
+        if n % 25 == 0 or n == len(temuan):
+            print('      {}/{} foto'.format(n, len(temuan)))
+
+    with ThreadPoolExecutor(max_workers=int(cfg.get('salinan_serentak') or 8)) as kolam:
+        list(kolam.map(satu, temuan))
+
+    if berhasil:
+        gudang.simpan(db, berhasil)
+        gudang.tandai_terunggah(db, [t['path_repo'] for t in berhasil])
+    print('[3/3] {} terkirim, {} gagal'.format(len(berhasil), hitung['gagal']))
+
+
 def _sudah_tersalin(sumber, tujuan):
     """Benar kalau salinan di foto-upload sudah ada dan tidak lebih tua dari sumbernya."""
     try:
@@ -248,7 +339,7 @@ def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
         jelaskan_gagal(cfg, folder, survei, tak_dikenal)
         return
 
-    if push:
+    if push and inti.mode_penyimpanan(cfg) != 'r2':
         boleh, kenapa = periksa_akses(inti)
         if not boleh:
             print('[unggah] tidak bisa mengunggah:')
@@ -323,7 +414,19 @@ def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
         db.close()
         return
 
-    # ---------------------------------------------------------------- 3. push bertahap
+    # ---------------------------------------------------------------- 3. kirim
+    if inti.mode_penyimpanan(cfg) == 'r2':
+        kirim_r2(inti, cfg, db, temuan, maju)
+        n, u = gudang.jumlah(db)
+        db.close()
+        print('[3/3] selesai. Database: {} foto, {} sudah terunggah'.format(n, u))
+        if temuan[0].get('url'):
+            print('[unggah] contoh URL untuk dicek di browser:')
+            print('       ' + temuan[0]['url'])
+        for t in tak_dikenal[:5]:
+            print('   ! dilewati: {}'.format(t))
+        return
+
     bagian = _bagi(temuan)
     print('[3/3] mengunggah ke GitHub: {:.1f} MB dipecah jadi {} bagian '
           '(maks. {:.0f} MB per bagian)'.format(total_mb, len(bagian), _mb(BATAS_KIRIM)))
@@ -446,8 +549,17 @@ def pasang_foto_tambahan(inti, cfg, folder_toko, berkas, jenis=None, push=True):
         print('[tambahan] push dilewati')
         db.close()
         return
-    _kirim(inti, db, [b['path_repo'] for b in baris],
-           'Foto tambahan {} ({})'.format(nama_toko[folder_toko], jenis or 'semua jenis'))
+    if inti.mode_penyimpanan(cfg) == 'r2':
+        klien = modul_r2.dari_config(cfg)
+        for b in baris:
+            klien.unggah(b['path_repo'], b['file_lokal'])
+            b['url'] = klien.alamat(b['path_repo'])
+        gudang.simpan(db, baris)
+        gudang.tandai_terunggah(db, [b['path_repo'] for b in baris])
+        print('[tambahan] terkirim ke R2: {}'.format(baris[0]['url']))
+    else:
+        _kirim(inti, db, [b['path_repo'] for b in baris],
+               'Foto tambahan {} ({})'.format(nama_toko[folder_toko], jenis or 'semua jenis'))
     db.close()
 
 
@@ -463,9 +575,16 @@ def hapus_foto_tambahan(inti, cfg, folder_toko, kunci, push=True):
         return
     path_repo = baris['path_repo']
     lokal = os.path.join(inti.AKAR, path_repo.replace('/', os.sep))
-    kode, keluaran = _git(inti.AKAR, ['rm', '-f', '--ignore-unmatch', path_repo])
-    if kode:
-        print('[tambahan] git rm gagal:\n' + keluaran)
+    if inti.mode_penyimpanan(cfg) == 'r2':
+        try:
+            modul_r2.dari_config(cfg).hapus(path_repo)
+        except Exception as e:
+            print('[tambahan] gagal menghapus dari R2: {}'.format(e))
+        push = False
+    else:
+        kode, keluaran = _git(inti.AKAR, ['rm', '-f', '--ignore-unmatch', path_repo])
+        if kode:
+            print('[tambahan] git rm gagal:\n' + keluaran)
     if os.path.exists(lokal):
         os.remove(lokal)
     db.execute("DELETE FROM foto WHERE toko = ? AND kunci = ?", (folder_toko, kunci))

@@ -351,6 +351,42 @@ Yang ditolak sebelum tersimpan: angka yang bukan angka atau di luar batas Shopee
 pcs di bawah Rp99, dan deskripsi di luar 20–3.000 karakter. Kalau ada yang ditolak,
 tidak ada satu pun perubahan yang ditulis.
 
+## Tempat foto: Cloudflare R2
+
+Foto disimpan di bucket R2 dan disajikan lewat domain sendiri
+`https://ganci.whatslink.group`. Diatur di `tools/config.json`:
+
+```json
+"penyimpanan": {
+  "mode": "r2",
+  "r2": {
+    "endpoint": "https://<akun>.r2.cloudflarestorage.com",
+    "bucket": "upload-ganci",
+    "domain": "https://ganci.whatslink.group"
+  }
+}
+```
+
+**Access Key ID dan Secret Access Key tidak ditaruh di situ.** `config.json` ikut ke GitHub
+yang public, jadi kuncinya disimpan di `data/lokal.json` yang tidak dilacak git:
+
+```json
+"penyimpanan": { "r2": { "akses": "...", "rahasia": "..." } }
+```
+
+Hanya komputer yang **mengunggah** foto yang butuh kunci itu. Komputer yang cuma membuat
+Excel tidak perlu — URL-nya dibaca dari `data/foto_r2.csv`, daftar bersama yang ikut git.
+
+Daftar itu diperbarui otomatis setiap kali menjalankan `migrasi-r2`, dan perlu di-commit
+supaya komputer lain ikut memakainya.
+
+| Perintah | Fungsi |
+|---|---|
+| `python tools/shopee_mass_upload.py migrasi-r2` | Unggah semua isi `foto-upload/` ke R2 dan perbarui daftar bersama |
+
+Mode lama (`"mode": "github"`, foto di repo dan disajikan jsDelivr) masih didukung —
+tinggal ubah `penyimpanan.mode`.
+
 ## Google Drive streaming — jangan dibuat "available offline"
 
 Folder produk di Drive isinya didominasi berkas CorelDRAW, sedangkan yang dibutuhkan hanya

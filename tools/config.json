@@ -258,5 +258,15 @@
       "sku pin button"
     ]
   },
-  "_sku_sheet": "Google Sheet sumber daftar SKU. Sheet harus dibagikan: Siapa saja yang memiliki link > Pelihat."
+  "_sku_sheet": "Google Sheet sumber daftar SKU. Sheet harus dibagikan: Siapa saja yang memiliki link > Pelihat.",
+  "penyimpanan": {
+    "mode": "r2",
+    "_mode": "r2 = Cloudflare R2, github = jsDelivr lewat repo ini",
+    "r2": {
+      "endpoint": "https://241f19a9b23afc8ef25c13d808f736ba.r2.cloudflarestorage.com",
+      "bucket": "upload-ganci",
+      "domain": "https://ganci.whatslink.group",
+      "_rahasia": "Access Key ID dan Secret Access Key TIDAK ditaruh di sini. Berkas ini ikut ke GitHub yang public. Simpan di data/lokal.json."
+    }
+  }
 }
