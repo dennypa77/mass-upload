@@ -165,6 +165,13 @@ jadi yang siap dikerjakan langsung terlihat tanpa menggulung. Angka itu berasal 
 
 Pilihan urutan lain ada di kotak **urut**: `Foto siap dulu` (bawaan), `Nama A-Z`, `Nama Z-A`.
 
+Kotak **status** menyaring langsung ke satu golongan, misalnya `Foto ada, belum diproses` —
+itu daftar folder yang siap dikerjakan berikutnya.
+
+Karena status sebuah baris baru dihitung ketika barisnya terlihat di layar, baris yang
+statusnya belum diketahui **tetap ditampilkan** saat menyaring, dan dihitung sambil digulung.
+Jumlahnya terlihat sebagai "N menunggu dihitung" di sebelah jumlah folder.
+
 Karena folder produknya ratusan, status tiap baris **baru dihitung ketika barisnya terlihat
 di layar**, lalu disimpan di `data/cache_folder.json` supaya kunjungan berikutnya instan.
 Tombol **Hitung ulang** memaksa satu folder dihitung ulang. Ada juga kotak saring nama

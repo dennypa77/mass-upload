@@ -116,6 +116,15 @@ tr.rinci li{margin:2px 0}
                  style="flex:1;max-width:260px" oninput="saring()">
           <label class="centang kecil"><input type="checkbox" id="hanyaFoto" onchange="saring()">
             hanya yang ada fotonya</label>
+          <span class="kecil redup">status:</span>
+          <select id="saringStatus" class="pilihan" onchange="saring()">
+            <option value="">Semua</option>
+            <option value="baru">Foto ada, belum diproses</option>
+            <option value="sebagian">Sebagian diupload</option>
+            <option value="siap">Siap dibuat listing</option>
+            <option value="tanpasku">SKU belum diimpor</option>
+            <option value="kosong">Belum ada foto</option>
+          </select>
           <span class="kecil redup">urut:</span>
           <select id="urutan" class="pilihan" onchange="muatPohon()">
             <option value="siap">Foto siap dulu</option>
@@ -1058,7 +1067,8 @@ function urutkanFolder(daftar){
 function saring(){
   const q=$('#cari').value.trim().toLowerCase();
   const hanya=$('#hanyaFoto').checked;
-  let tampak=0;
+  const status=$('#saringStatus').value;
+  let tampak=0, menunggu=0;
   document.querySelectorAll('tr.jenis').forEach(th=>{
     const buka=th.dataset.buka!=='0';
     let anak=th.nextElementSibling;
@@ -1066,13 +1076,21 @@ function saring(){
       const s=anak.dataset.status?JSON.parse(anak.dataset.status):null;
       let ok=buka;
       if(ok&&q) ok=anak.dataset.nama.toLowerCase().includes(q);
-      if(ok&&hanya) ok=!!(s&&s.foto)||+anak.dataset.siap>0;
+      // Status sebuah baris baru dihitung ketika barisnya terlihat di layar.
+      // Kalau baris yang statusnya belum diketahui langsung disembunyikan, dia
+      // tidak akan pernah terlihat, jadi statusnya tidak pernah dihitung dan
+      // baris itu hilang selamanya. Karena itu yang belum diketahui tetap
+      // ditampilkan sampai statusnya datang.
+      if(ok&&hanya&&s) ok=!!s.foto||+anak.dataset.siap>0;
+      if(ok&&status&&s) ok=s.keadaan===status;
+      if(ok&&!s&&(hanya||status)) menunggu++;
       anak.style.display=ok?'':'none';
       if(ok)tampak++;
       anak=anak.nextElementSibling;
     }
   });
-  $('#hitung').textContent=tampak+' folder tampil';
+  $('#hitung').innerHTML=tampak+' folder tampil'
+    +(menunggu?` <span class="redup">· ${menunggu} menunggu dihitung</span>`:'');
 }
 
 /* ---------------------------------------------------------------- terpilih */
