@@ -337,7 +337,7 @@ def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
     temuan, tanpa_seri, tak_dikenal, survei = deteksi(inti, cfg, folder)
     if not temuan:
         jelaskan_gagal(cfg, folder, survei, tak_dikenal)
-        return
+        return {'ok': False, 'alasan': 'tidak ada foto yang dikenali', 'foto': 0}
 
     if push and inti.mode_penyimpanan(cfg) != 'r2':
         boleh, kenapa = periksa_akses(inti)
@@ -346,7 +346,7 @@ def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
             print('     ' + kenapa.replace('\n', '\n     '))
             print('[unggah] dibatalkan sebelum menyalin. Perbaiki dulu izinnya, '
                   'atau lepas centang upload untuk menyalin saja.')
-            return
+            return {'ok': False, 'alasan': 'tidak bisa mengunggah', 'foto': 0}
 
     rekap = _rekap(temuan)
     print('[unggah] folder : {}'.format(folder))
@@ -412,7 +412,7 @@ def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
     if not push:
         print('[3/3] dilewati — upload tidak dicentang')
         db.close()
-        return
+        return {'ok': True, 'foto': len(temuan), 'terkirim': 0}
 
     # ---------------------------------------------------------------- 3. kirim
     if inti.mode_penyimpanan(cfg) == 'r2':
@@ -425,7 +425,7 @@ def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
             print('       ' + temuan[0]['url'])
         for t in tak_dikenal[:5]:
             print('   ! dilewati: {}'.format(t))
-        return
+        return {'ok': True, 'foto': len(temuan), 'terkirim': len(temuan)}
 
     bagian = _bagi(temuan)
     print('[3/3] mengunggah ke GitHub: {:.1f} MB dipecah jadi {} bagian '
@@ -488,6 +488,66 @@ def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
         print('   Catatan: jsDelivr butuh beberapa menit sebelum berkas baru bisa diakses.')
     for t in tak_dikenal[:5]:
         print('   ! dilewati: {}'.format(t))
+    return {'ok': berhasil == len(bagian), 'foto': len(temuan),
+            'terkirim': len(temuan) if berhasil == len(bagian) else 0,
+            'alasan': None if berhasil == len(bagian) else 'sebagian bagian gagal terkirim'}
+
+
+def proses_banyak(inti, cfg, folder_daftar, push=True, lapor=None, paksa=False):
+    """Proses beberapa folder produk berurutan, dengan ringkasan di akhir.
+
+    Foldernya dikerjakan satu per satu, bukan bersamaan: tiap folder sendiri
+    sudah menyalin puluhan berkas sekaligus, dan mengunggah dua folder serentak
+    hanya membuat log jadi bercampur tanpa mempercepat apa pun.
+    """
+    folder_daftar = [f for f in folder_daftar if f]
+    total = len(folder_daftar)
+    if not total:
+        print('[unggah] tidak ada folder yang dipilih')
+        return
+    if total == 1:
+        return proses(inti, cfg, folder_daftar[0], push=push, lapor=lapor, paksa=paksa)
+
+    print('[unggah] {} folder akan diproses berurutan:'.format(total))
+    for i, f in enumerate(folder_daftar, 1):
+        print('   {:>3}. {}'.format(i, os.path.basename(f) or f))
+
+    hasil = []
+    for i, folder in enumerate(folder_daftar, 1):
+        awalan = 'folder {}/{}'.format(i, total)
+        print('')
+        print('=' * 70)
+        print('>> {} — {}'.format(awalan, folder))
+
+        def lapor_folder(tahap, n, jml, _awalan=awalan):
+            if lapor:
+                lapor('{} · {}'.format(_awalan, tahap), n, jml)
+
+        lapor_folder('mulai', 0, 1)
+        try:
+            r = proses(inti, cfg, folder, push=push, lapor=lapor_folder, paksa=paksa)
+        except Exception as e:
+            print('   ! folder ini gagal: {}'.format(e))
+            r = {'ok': False, 'alasan': str(e), 'foto': 0}
+        hasil.append((folder, r or {'ok': False, 'alasan': 'tidak ada hasil', 'foto': 0}))
+
+    print('')
+    print('=' * 70)
+    print('[unggah] ringkasan {} folder:'.format(total))
+    n_ok = sum(1 for _, r in hasil if r.get('ok'))
+    n_foto = sum(r.get('foto', 0) for _, r in hasil)
+    n_kirim = sum(r.get('terkirim', 0) for _, r in hasil)
+    for folder, r in hasil:
+        tanda = 'ok    ' if r.get('ok') else 'GAGAL '
+        print('   {} {:<28} {} foto{}'.format(
+            tanda, os.path.basename(folder) or folder, r.get('foto', 0),
+            '' if r.get('ok') else '  — ' + str(r.get('alasan') or 'tidak diketahui')))
+    print('[unggah] {}/{} folder berhasil, {} foto diproses, {} terkirim'.format(
+        n_ok, total, n_foto, n_kirim))
+    if n_ok < total:
+        print('   Folder yang gagal bisa dijalankan ulang; yang sudah berhasil '
+              'tidak akan disalin ulang.')
+    return {'ok': n_ok == total, 'folder': total, 'berhasil': n_ok, 'foto': n_foto}
 
 
 def _kunci_berikut(db, folder_toko, slug):

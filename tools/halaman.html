@@ -172,10 +172,16 @@ tr.rinci li{margin:2px 0}
       </div>
     </div>
 
-    <div class="kartu" style="align-self:start">
-      <h2>Folder terpilih</h2>
-      <div class="isi" id="terpilih">
-        <span class="redup">Klik salah satu folder di sebelah kiri.</span>
+    <div style="align-self:start">
+      <div class="kartu" style="margin-bottom:14px">
+        <h2>Folder dicentang</h2>
+        <div class="isi" id="panelCentang"></div>
+      </div>
+      <div class="kartu">
+        <h2>Folder yang sedang dibuka</h2>
+        <div class="isi" id="terpilih">
+          <span class="redup">Klik salah satu folder di sebelah kiri.</span>
+        </div>
       </div>
     </div>
   </div>
@@ -490,6 +496,26 @@ function gambarBilah(){
     $('#isiPilihan').innerHTML=isi+(n>6?` <span class="redup">+${n-6} lagi</span>`:'')
       +` <span class="redup">(${n} folder)</span>`;
   }
+  const p=$('#panelCentang');
+  if(p)p.innerHTML=!n
+    ? `<span class="redup">Belum ada folder yang dicentang. Centang kotak di kolom
+        paling kiri tabel — bisa lebih dari satu, dan pilihannya terbawa sampai
+        tab Export.</span>`
+    : `<div><b>${n} folder</b> dicentang
+         <span class="redup kecil">· ${[...dipilih.values()].map(f=>f.nama.replace('PRODUK ','')).slice(0,4).join(', ')}${n>4?` +${n-4} lagi`:''}</span></div>
+       <div class="baris" style="margin-top:10px">
+         <label class="centang kecil"><input type="checkbox" id="pushBanyak" checked>
+           upload setelah disalin</label>
+       </div>
+       <div class="baris" style="margin-top:8px">
+         <button class="utama" onclick="prosesBanyak()">Proses ${n} folder dicentang</button>
+         <button onclick="kosongkanPilihan()">Kosongkan</button>
+       </div>
+       <div class="arti">Folder dikerjakan berurutan dari atas ke bawah. Kalau satu
+         folder gagal, sisanya tetap dilanjutkan, dan di akhir ada ringkasan folder
+         mana yang berhasil. Foto yang sudah pernah disalin tidak disalin ulang,
+         jadi aman dijalankan lagi untuk melanjutkan yang gagal.</div>`;
+
   const r=$('#ringkasEkspor');
   if(r)r.innerHTML=n
     ? `Akan diekspor: <b>${n} folder terpilih</b>. Hasil ditulis ke <code>output/pilihan/</code>.`
@@ -1207,6 +1233,27 @@ function deteksi(){
     $('#detail').innerHTML=h;
   });
 }
+function prosesBanyak(){
+  const n=dipilih.size;
+  if(!n)return;
+  const push=$('#pushBanyak').checked;
+  const daftar=[...dipilih.values()];
+  const br=String.fromCharCode(10);
+  let pesan='Proses '+n+' folder yang dicentang?'+br+br
+    +daftar.slice(0,10).map(f=>'· '+f.nama).join(br)
+    +(n>10?br+'… +'+(n-10)+' folder lagi':'')+br+br
+    +(push?'Foto disalin lalu diunggah ke Cloudflare R2.'
+          :'Foto hanya disalin, tanpa upload.');
+  // Mencentang seluruh hasil saringan gampang sekali, dan 800 folder berarti
+  // berjam-jam. Sebutkan itu sebelum dijalankan, bukan sesudahnya.
+  if(n>20)pesan+=br+br+'Ini pekerjaan panjang — kira-kira '+n+' folder x beberapa '
+    +'menit. Jendela boleh ditinggal, prosesnya jalan di server.';
+  if(!confirm(pesan))return;
+  api('/api/unggah',{paths:daftar.map(f=>f.path),push:push}).then(r=>{
+    if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
+  });
+}
+
 function proses(){
   if(!pilih)return;
   const push=$('#push').checked;

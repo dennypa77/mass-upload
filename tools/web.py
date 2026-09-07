@@ -556,15 +556,22 @@ class Penangan(BaseHTTPRequestHandler):
                                     'toko_sah': [t['nama'] for t in cfg['toko']],
                                     'contoh': temuan[0]['path_repo'] if temuan else None})
             if self.path == '/api/unggah':
-                path, push = badan['path'], bool(badan.get('push', True))
+                # 'paths' dipakai kalau beberapa folder dicentang sekaligus;
+                # 'path' tetap diterima supaya tombol folder tunggal tidak berubah
+                daftar = badan.get('paths') or [badan['path']]
+                push = bool(badan.get('push', True))
 
                 def lapor(tahap, n, total):
                     SIBUK.update(tahap=tahap, n=n, total=total)
 
-                ok = di_latar('unggah', lambda: (
-                    modul_unggah.proses(inti, cfg, path, push=push, lapor=lapor),
-                    SINGGAHAN.clear()))
-                return self._kirim({'mulai': ok})
+                def kerja():
+                    modul_unggah.proses_banyak(inti, cfg, daftar, push=push, lapor=lapor)
+                    for p in daftar:
+                        SINGGAHAN.pop(p, None)
+                    simpan_cache()
+
+                nama = 'unggah' if len(daftar) == 1 else 'unggah {} folder'.format(len(daftar))
+                return self._kirim({'mulai': di_latar(nama, kerja)})
             if self.path == '/api/perintah':
                 nama = badan['perintah']
 
