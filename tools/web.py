@@ -26,12 +26,17 @@ KUNCI = threading.Lock()
 SIBUK = {'nama': None, 'tahap': None, 'n': 0, 'total': 0}
 SINGGAHAN = {}                # cache hasil pemindaian folder
 BERKAS_CACHE = os.path.join(inti.AKAR, 'data', 'cache_folder.json')
+# Dinaikkan tiap kali isi hasil status_folder berubah bentuk, supaya cache lama
+# dari versi sebelumnya dibuang, bukan ditampilkan sebagai angka yang salah.
+VERSI_CACHE = 2
 
 
 def muat_cache():
     try:
         with open(BERKAS_CACHE, encoding='utf-8') as f:
-            SINGGAHAN.update(json.load(f))
+            isi = json.load(f)
+        if isi.get('versi') == VERSI_CACHE:
+            SINGGAHAN.update(isi['folder'])
     except Exception:
         pass
 
@@ -40,7 +45,7 @@ def simpan_cache():
     try:
         os.makedirs(os.path.dirname(BERKAS_CACHE), exist_ok=True)
         with open(BERKAS_CACHE, 'w', encoding='utf-8') as f:
-            json.dump(SINGGAHAN, f)
+            json.dump({'versi': VERSI_CACHE, 'folder': dict(SINGGAHAN)}, f)
     except Exception:
         pass
 
@@ -123,55 +128,95 @@ def pohon(cfg):
     return hasil
 
 
+def _indeks_sku(_ingatan={}):
+    """{jenis: [nomor SKU]} terurut, dihitung sekali saja.
+
+    Sebelumnya tiap folder membaca ulang seluruh sku.csv dan seluruh database.
+    Dengan puluhan ribu SKU dan ratusan folder itu jadi sangat lambat, jadi
+    keduanya diindeks sekali lalu dicari dengan bisect.
+    """
+    if not os.path.exists(inti.SKU_CSV):
+        return {}
+    cap = os.path.getmtime(inti.SKU_CSV)
+    if _ingatan.get('cap') == cap:
+        return _ingatan['isi']
+    hasil = {}
+    try:
+        for jenis, seri_map in inti.baca_sku().items():
+            nomor = []
+            for desain in seri_map.values():
+                for d in desain:
+                    n = inti.nomor_sku(d['sku'])
+                    if n:
+                        nomor.append(n)
+            nomor.sort()
+            hasil[jenis] = nomor
+    except SystemExit:
+        return {}
+    _ingatan['cap'], _ingatan['isi'] = cap, hasil
+    return hasil
+
+
+def _indeks_db(_ingatan={}):
+    """{jenis: ([nomor], [nomor yang sudah terunggah])} dari database foto."""
+    if not os.path.exists(inti.DB_PATH):
+        return {}
+    cap = os.path.getmtime(inti.DB_PATH)
+    if _ingatan.get('cap') == cap:
+        return _ingatan['isi']
+    hasil = {}
+    db = gudang.buka(inti.DB_PATH)
+    try:
+        for r in db.execute('SELECT jenis, kunci, diunggah FROM foto'):
+            n = inti.nomor_sku(r['kunci'] or '')
+            if not n:
+                continue
+            semua, terunggah = hasil.setdefault((r['jenis'] or '').upper(), ([], []))
+            semua.append(n)
+            if r['diunggah']:
+                terunggah.append(n)
+    finally:
+        db.close()
+    for semua, terunggah in hasil.values():
+        semua.sort()
+        terunggah.sort()
+    _ingatan['cap'], _ingatan['isi'] = cap, hasil
+    return hasil
+
+
+def _dalam(nomor, dari, sampai):
+    from bisect import bisect_left, bisect_right
+    return bisect_right(nomor, sampai) - bisect_left(nomor, dari) if nomor else 0
+
+
 def status_folder(cfg, jenis, path, dari, sampai, segar=False):
     """Hitung status satu folder produk. Hasilnya disimpan di cache."""
     if not segar and path in SINGGAHAN:
         return SINGGAHAN[path]
 
-    pre = cfg['jenis'][jenis]['prefix_sku']
-    n_foto = 0
+    n_foto = n_foto_toko = 0
     toko_ada = set()
     for dirpath, _, berkas in os.walk(path):
         gambar = [f for f in berkas if f.lower().endswith(inti.EKSTENSI)]
         if not gambar:
             continue
         n_foto += len(gambar)
-        for bagian in os.path.normpath(dirpath).split(os.sep)[::-1]:
-            m = re.match(r'^(?:toko|foto)[\s_-]*(\d+)$', bagian.strip(), re.I)
-            if m:
-                toko_ada.add('toko' + m.group(1))
-                break
+        toko = modul_unggah.kenali_toko(cfg, dirpath)
+        if toko:
+            toko_ada.add(toko)
+            n_foto_toko += len(gambar)
 
-    # berapa SKU pada rentang ini yang sudah terdaftar di sku.csv
-    n_sku = 0
-    try:
-        for j, seri_map in inti.baca_sku().items():
-            if j != jenis:
-                continue
-            for desain in seri_map.values():
-                for d in desain:
-                    nomor = inti.nomor_sku(d['sku'])
-                    if nomor and dari <= nomor <= sampai:
-                        n_sku += 1
-    except SystemExit:
-        pass
-
-    # berapa foto rentang ini yang sudah masuk database / sudah di GitHub
-    n_db = n_unggah = 0
-    if os.path.exists(inti.DB_PATH):
-        db = gudang.buka(inti.DB_PATH)
-        for r in db.execute(
-                'SELECT kunci, diunggah FROM foto WHERE jenis = ?', (jenis,)):
-            nomor = inti.nomor_sku(r['kunci'])
-            if nomor and dari <= nomor <= sampai:
-                n_db += 1
-                n_unggah += r['diunggah'] or 0
-        db.close()
+    n_sku = _dalam(_indeks_sku().get(jenis.upper(), []), dari, sampai)
+    semua, terunggah = _indeks_db().get(jenis.upper(), ([], []))
+    n_db = _dalam(semua, dari, sampai)
+    n_unggah = _dalam(terunggah, dari, sampai)
 
     # urutan ini penting: foto boleh sudah terupload, tapi tanpa SKU di sku.csv
     # listing-nya tetap tidak bisa dibuat, jadi jangan disebut siap
     if n_foto == 0:
         keadaan, label = 'kosong', 'belum ada foto'
+    elif n_foto_toko == 0:
+        keadaan, label = 'tanpatoko', 'folder toko tidak dikenali'
     elif n_sku == 0:
         keadaan, label = 'tanpasku', 'SKU belum diimpor'
     elif n_unggah and n_unggah >= n_db and n_db >= n_sku:
@@ -181,11 +226,50 @@ def status_folder(cfg, jenis, path, dari, sampai, segar=False):
     else:
         keadaan, label = 'baru', 'foto ada, belum diproses'
 
-    hasil = {'path': path, 'foto': n_foto, 'toko': sorted(toko_ada), 'sku': n_sku,
-             'db': n_db, 'unggah': n_unggah, 'keadaan': keadaan, 'label': label}
+    hasil = {'path': path, 'foto': n_foto, 'foto_toko': n_foto_toko,
+             'toko': sorted(toko_ada), 'sku': n_sku,
+             'db': n_db, 'unggah': n_unggah, 'keadaan': keadaan, 'label': label,
+             'jenis': jenis, 'nama': os.path.basename(path)}
     SINGGAHAN[path] = hasil
-    simpan_cache()
     return hasil
+
+
+def pindai_semua(cfg, lapor=None):
+    """Hitung status seluruh folder produk, tidak menunggu barisnya terlihat."""
+    from concurrent.futures import ThreadPoolExecutor
+    daftar = [(j['jenis'], f) for j in pohon(cfg) for f in j['folder']]
+    total = len(daftar)
+    print('[scan] memindai {} folder produk …'.format(total))
+    hitung = {'n': 0}
+    kunci = threading.Lock()
+
+    def satu(pasang):
+        jenis, f = pasang
+        try:
+            status_folder(cfg, jenis, f['path'], f['dari'], f['sampai'], segar=True)
+        except Exception as e:
+            print('   ! {}: {}'.format(f['nama'], e))
+        with kunci:
+            hitung['n'] += 1
+            n = hitung['n']
+        if lapor:
+            lapor('scan', n, total)
+        if n % 100 == 0 or n == total:
+            print('      {}/{} folder'.format(n, total))
+
+    with ThreadPoolExecutor(max_workers=8) as kolam:
+        list(kolam.map(satu, daftar))
+
+    simpan_cache()
+    rekap = {}
+    for j, f in daftar:
+        s = SINGGAHAN.get(f['path'])
+        if s:
+            rekap[s['label']] = rekap.get(s['label'], 0) + 1
+    print('[scan] selesai:')
+    for k, n in sorted(rekap.items(), key=lambda x: -x[1]):
+        print('      {:<28} {}'.format(k, n))
+    return rekap
 
 
 ANGKA = [('harga_paket', 'Harga paket', 1, 10 ** 9),
@@ -314,9 +398,32 @@ def ringkas_status(cfg):
         with open(inti.MANIFEST_R2, encoding='utf-8-sig', newline='') as f:
             jumlah_foto = max(0, sum(1 for _ in f) - 1)
 
+    # Keadaan folder sebenarnya di Drive, dari hasil scan terakhir. Angka dari
+    # sheet menyatakan niat tim; angka ini menyatakan apa yang benar-benar ada.
+    semua_folder = [(j['jenis'], f) for j in pohon(cfg) for f in j['folder']]
+    per_status, per_jenis_folder = {}, {}
+    discan = 0
+    for jenis, f in semua_folder:
+        s = SINGGAHAN.get(f['path'])
+        if not s:
+            continue
+        discan += 1
+        per_status[s['keadaan']] = per_status.get(s['keadaan'], 0) + 1
+        jj = per_jenis_folder.setdefault(jenis, {})
+        jj[s['keadaan']] = jj.get(s['keadaan'], 0) + 1
+
+    belum_diproses = [
+        {'jenis': jenis, 'nama': f['nama'], 'foto': SINGGAHAN[f['path']]['foto']}
+        for jenis, f in semua_folder
+        if SINGGAHAN.get(f['path'], {}).get('keadaan') == 'baru']
+
     return {'per_jenis': per_jenis, 'foto_terunggah': jumlah_foto,
             'siap_dikerjakan': seri_belum[:40],
-            'jumlah_siap_dikerjakan': len(seri_belum)}
+            'jumlah_siap_dikerjakan': len(seri_belum),
+            'folder': {'total': len(semua_folder), 'discan': discan,
+                       'status': per_status, 'per_jenis': per_jenis_folder},
+            'belum_diproses': belum_diproses[:40],
+            'jumlah_belum_diproses': len(belum_diproses)}
 
 
 def laporan_cek(cfg, lingkup=None):
@@ -414,6 +521,8 @@ class Penangan(BaseHTTPRequestHandler):
                 return self._kirim(self._status())
             if jalur == '/api/pohon':
                 return self._kirim({'jenis': pohon(inti.baca_config())})
+            if jalur == '/api/singgahan':
+                return self._kirim({'folder': dict(SINGGAHAN)})
             if jalur == '/api/log':
                 sejak = int(tanya.get('sejak', 0))
                 with KUNCI:
@@ -555,6 +664,11 @@ class Penangan(BaseHTTPRequestHandler):
                     SINGGAHAN.clear()
                     simpan_cache()
                 return self._kirim(hasil)
+            if self.path == '/api/pindai':
+                def lapor(tahap, n, total):
+                    SIBUK.update(tahap=tahap, n=n, total=total)
+                return self._kirim({'mulai': di_latar(
+                    'scan folder', lambda: pindai_semua(cfg, lapor))})
             if self.path == '/api/dashboard':
                 return self._kirim(ringkas_status(cfg))
             if self.path == '/api/ringkas_sku':

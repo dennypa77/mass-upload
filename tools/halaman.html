@@ -42,6 +42,7 @@ border:1px solid transparent;white-space:nowrap}
 .t-sebagian{color:var(--biru);border-color:#264468;background:#1d2c40}
 .t-siap{color:var(--hijau);border-color:#2b5236;background:#1c3324}
 .t-tanpasku{color:var(--merah);border-color:#5c2b26;background:#3a1e1b}
+.t-tanpatoko{color:var(--merah);border-color:#5c2b26;background:#3a1e1b}
 .angka{color:var(--redup);font-variant-numeric:tabular-nums;white-space:nowrap}
 .redup{color:var(--redup)} .kecil{font-size:12px}
 .baris{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -123,6 +124,7 @@ tr.rinci li{margin:2px 0}
             <option value="sebagian">Sebagian diupload</option>
             <option value="siap">Siap dibuat listing</option>
             <option value="tanpasku">SKU belum diimpor</option>
+            <option value="tanpatoko">Folder toko tidak dikenali</option>
             <option value="kosong">Belum ada foto</option>
           </select>
           <span class="kecil redup">urut:</span>
@@ -134,6 +136,7 @@ tr.rinci li{margin:2px 0}
           <div style="flex:1"></div>
           <span class="kecil redup" id="hitung"></span>
           <button onclick="muatPohon()">Muat ulang</button>
+          <button class="utama" onclick="scanSemua()">Scan semua folder</button>
         </div>
       </div>
       <div style="max-height:520px;overflow:auto">
@@ -556,6 +559,32 @@ function muatDasbor(){
       <div class="kecil redup" style="margin-top:10px">
         ${d.foto_terunggah.toLocaleString('id')} foto sudah ada di Cloudflare R2</div>
     </div></div>`;
+
+    const F=d.folder||{total:0,discan:0,status:{}};
+    const st=k=>F.status[k]||0;
+    h+=`<div class="kartu" style="margin-top:14px">
+      <h2>Keadaan folder di Drive — dari hasil scan</h2><div class="isi">
+      ${F.discan<F.total?`<div class="kecil" style="color:var(--kuning);margin-bottom:10px">
+        Baru ${F.discan} dari ${F.total} folder yang sudah dihitung. Tekan
+        <b>Scan semua folder</b> di tab “1. Folder Produk” supaya angkanya lengkap.</div>`
+       :`<div class="kecil" style="color:var(--hijau);margin-bottom:10px">
+        Seluruh ${F.total} folder sudah dihitung.</div>`}
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+        ${kotak('Foto ada, belum diproses',st('baru'),'var(--kuning)','siap diunggah ke R2')}
+        ${kotak('Sebagian diupload',st('sebagian'),'var(--biru)','sebagian foto sudah naik')}
+        ${kotak('Siap dibuat listing',st('siap'),'var(--hijau)','foto lengkap di R2')}
+        ${kotak('SKU belum diimpor',st('tanpasku'),'var(--merah)','foto ada, SKU belum terdaftar')}
+        ${kotak('Folder toko tak dikenali',st('tanpatoko'),'var(--merah)','fotonya tidak di TOKO 1/2/3')}
+        ${kotak('Belum ada foto',st('kosong'),'var(--redup)','folder kosong')}
+      </div>
+      ${d.jumlah_belum_diproses?`<div style="margin-top:14px">
+        <div class="kecil redup" style="margin-bottom:6px">Folder yang siap diproses
+          berikutnya (${d.jumlah_belum_diproses}):</div>
+        <div style="max-height:240px;overflow:auto"><table><tbody>`
+        +d.belum_diproses.map(x=>`<tr><td class="kecil">${x.jenis}</td>
+          <td class="kecil">${x.nama}</td><td class="angka">${x.foto} foto</td></tr>`).join('')
+        +'</tbody></table></div></div>':''}
+      </div></div>`;
 
     h+='<div class="kartu" style="margin-top:14px"><h2>Per jenis produk</h2><div class="isi">'
       +'<table><thead><tr><th>Jenis</th><th>Total listing</th><th>Sudah diupload</th>'
@@ -997,23 +1026,25 @@ function amati(tr){
   },{rootMargin:'150px'});
   pengamat.observe(tr);
 }
+function pasangStatus(tr,s){
+  tr.dataset.status=JSON.stringify(s);
+  tr.querySelector('[data-k=foto]').textContent=s.foto?s.foto+' foto':'—';
+  tr.querySelector('[data-k=sku]').textContent=s.sku?s.sku+' SKU':'0 SKU';
+  tr.querySelector('[data-k=git]').textContent=s.db?`${s.unggah} / ${s.db}`:'—';
+  tr.querySelector('[data-k=tanda]').innerHTML=
+    `<span class="tanda t-${s.keadaan}">${s.label}</span>`;
+  if(tr.classList.contains('pilih'))tulisDetail(s);
+}
 function isiStatus(tr,segar){
   const d=tr.dataset;
   api('/api/folder',{jenis:d.jenis,path:d.path,dari:+d.dari,sampai:+d.sampai,segar:!!segar})
-   .then(s=>{
-     tr.dataset.status=JSON.stringify(s);
-     tr.querySelector('[data-k=foto]').textContent=s.foto?s.foto+' foto':'—';
-     tr.querySelector('[data-k=sku]').textContent=s.sku?s.sku+' SKU':'0 SKU';
-     tr.querySelector('[data-k=git]').textContent=s.db?`${s.unggah} / ${s.db}`:'—';
-     tr.querySelector('[data-k=tanda]').innerHTML=
-       `<span class="tanda t-${s.keadaan}">${s.label}</span>`;
-     if(tr.classList.contains('pilih'))tulisDetail(s);
-     saring();
-   }).catch(()=>{});
+   .then(s=>{pasangStatus(tr,s);saring();}).catch(()=>{});
 }
 function muatPohon(){
   if(pengamat){pengamat.disconnect();pengamat=null;}
-  api('/api/pohon').then(d=>{
+  Promise.all([api('/api/pohon'),api('/api/singgahan').catch(()=>({folder:{}}))])
+   .then(([d,c])=>{
+    const singgahan=c.folder||{};
     const tb=$('#pohon tbody'); tb.innerHTML=''; let total=0;
     d.jenis.forEach((j,idx)=>{
       const th=document.createElement('tr'); th.className='jenis';
@@ -1046,7 +1077,9 @@ function muatPohon(){
         kotak.checked=dipilih.has(f.path);
         kotak.onclick=e=>{e.stopPropagation();ubahCentang(kotak,r);};
         r.onclick=()=>pilihFolder(r);
-        tb.appendChild(r); amati(r);
+        tb.appendChild(r);
+        const sudah=singgahan[f.path];
+        if(sudah)pasangStatus(r,sudah); else amati(r);
       });
     });
     $('#hitung').textContent=total+' folder';
@@ -1062,6 +1095,15 @@ function urutkanFolder(daftar){
   else if(cara==='za')salinan.sort((a,b)=>b.nama.localeCompare(a.nama));
   else salinan.sort((a,b)=>(b.siap||0)-(a.siap||0)||a.nama.localeCompare(b.nama));
   return salinan;
+}
+
+function scanSemua(){
+  if(!confirm('Hitung status seluruh folder produk sekarang?' + String.fromCharCode(10,10)
+    +'Biasanya satu sampai beberapa menit, tergantung berapa folder yang isinya '
+    +'belum pernah dibaca dari Google Drive.'))return;
+  api('/api/pindai',{}).then(r=>{
+    if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
+  });
 }
 
 function saring(){
@@ -1122,7 +1164,7 @@ function tulisDetail(s){
   const tr=document.querySelector('tr.folder.pilih');
   el.innerHTML=`<table style="margin:0">
     <tr><td class="redup">Foto siap menurut sheet</td><td><b>${tr?tr.dataset.siap:0}</b> SKU</td></tr>
-    <tr><td class="redup">Foto di sumber</td><td><b>${s.foto}</b></td></tr>
+    <tr><td class="redup">Foto di sumber</td><td><b>${s.foto}</b>${s.foto_toko!==undefined&&s.foto_toko!==s.foto?` <span class="redup kecil">(${s.foto_toko} di dalam folder toko)</span>`:''}</td></tr>
     <tr><td class="redup">Toko terdeteksi</td><td>${s.toko.length} (${s.toko.join(', ')||'-'})</td></tr>
     <tr><td class="redup">SKU terdaftar</td><td>${s.sku}</td></tr>
     <tr><td class="redup">Tercatat di database</td><td>${s.db}</td></tr>
@@ -1289,9 +1331,10 @@ setInterval(()=>{
       sejak=d.total; if(bawah)el.scrollTop=el.scrollHeight;
     }
     $('#tahap').textContent=d.sibuk
-      ? `— ${d.sibuk}${d.tahap?': '+d.tahap+' '+d.n+'/'+d.total_maju:''}` : '';
+      ? `— ${d.sibuk}${d.tahap?`: ${d.tahap} ${d.n}/${d.total_maju}`
+        +(d.total_maju?` (${Math.round(d.n/d.total_maju*100)}%)`:''):''}` : '';
     $('#barKerja').style.width=(d.sibuk&&d.total_maju?d.n/d.total_maju*100:0)+'%';
-    if(!d.sibuk&&window._tadiSibuk){muatStatus();}
+    if(!d.sibuk&&window._tadiSibuk){muatStatus();muatDasbor();muatPohon();}
     window._tadiSibuk=!!d.sibuk;
   }).catch(()=>{});
 },700);
