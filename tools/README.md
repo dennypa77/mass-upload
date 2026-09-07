@@ -108,6 +108,7 @@ Tampilan web disusun berurutan seperti langkah kerja:
 
 | Tab | Isi |
 |---|---|
+| **Dashboard** | berapa listing sudah diupload ke Shopee, berapa siap dikerjakan, berapa belum ada fotonya |
 | **Sumber Data** | folder sumber tiap jenis produk, impor SKU, alamat dasar foto |
 | **1. Folder Produk** | penjelajah folder — centang folder yang mau dikerjakan |
 | **2. Cek Kesiapan** | judul, deskripsi, foto utama, foto varian, harga, varian — per listing |
@@ -512,6 +513,29 @@ karena itu perintah di atas memakai `git add -f`. Upload bertahap per folder, ja
 Alur uji yang disarankan: `url` untuk satu seri → push folder fotonya → buka salah satu URL
 di browser untuk memastikan jsDelivr sudah melayaninya → `build` → upload satu berkas Excel
 ke Shopee → cek fotonya muncul. Kalau beres, baru lanjut ke sisanya.
+
+## Dashboard status upload
+
+Tab pertama meringkas kemajuan pekerjaan, dihitung dari dua kolom di Google Sheet:
+
+| Kolom sheet | Artinya di dashboard |
+|---|---|
+| **FOTO PRODUK** berisi DONE | fotonya sudah dibuat |
+| **UPLOAD** berisi teks apa pun | listing itu sudah masuk Shopee |
+
+Satu seri di sheet = satu listing di Shopee. Tiap listing masuk salah satu golongan:
+
+| Golongan | Arti |
+|---|---|
+| **Sudah diupload** | kolom UPLOAD sudah terisi |
+| **Siap, belum diupload** | foto lengkap, tinggal dikerjakan — ini daftar kerja berikutnya |
+| **Foto belum lengkap** | sebagian SKU-nya belum ada foto |
+| **Belum ada foto** | belum dibuat sama sekali |
+
+Di bawahnya ada rincian per jenis produk dan daftar listing yang siap dikerjakan.
+
+Karena angkanya dibaca dari sheet, ketepatannya bergantung pada tim yang mengisi kedua kolom
+itu. Listing yang sudah diupload tapi kolom UPLOAD-nya belum diisi akan terhitung belum.
 
 ## Mengisi daftar SKU — ambil langsung dari Google Sheet
 

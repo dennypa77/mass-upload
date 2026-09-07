@@ -274,6 +274,51 @@ def daftar_tambahan(cfg):
         db.close()
 
 
+def ringkas_status(cfg):
+    """Hitung berapa listing yang sudah diupload ke Shopee dan berapa yang belum.
+
+    Penandanya diambil dari Google Sheet: kolom FOTO PRODUK menyatakan fotonya
+    sudah dibuat, kolom UPLOAD menyatakan listing itu sudah masuk Shopee. Satu
+    seri di sheet sama dengan satu listing di Shopee.
+    """
+    try:
+        data = inti.baca_sku()
+    except SystemExit:
+        return {'kosong': True}
+
+    per_jenis, seri_belum = [], []
+    for jenis, seri_map in data.items():
+        hitung = {'total': 0, 'sudah': 0, 'siap': 0, 'sebagian': 0, 'kosong': 0}
+        sku = {'total': 0, 'siap': 0, 'sudah': 0}
+        for seri, desain in seri_map.items():
+            n = len(desain)
+            n_siap = sum(1 for d in desain if d.get('foto_siap'))
+            n_upload = sum(1 for d in desain if d.get('sudah_upload'))
+            hitung['total'] += 1
+            sku['total'] += n
+            sku['siap'] += n_siap
+            sku['sudah'] += n_upload
+            if n_upload:
+                hitung['sudah'] += 1
+            elif n_siap >= n:
+                hitung['siap'] += 1
+                seri_belum.append({'jenis': jenis, 'seri': seri, 'sku': n})
+            elif n_siap:
+                hitung['sebagian'] += 1
+            else:
+                hitung['kosong'] += 1
+        per_jenis.append({'jenis': jenis, 'seri': hitung, 'sku': sku})
+
+    jumlah_foto = 0
+    if os.path.exists(inti.MANIFEST_R2):
+        with open(inti.MANIFEST_R2, encoding='utf-8-sig', newline='') as f:
+            jumlah_foto = max(0, sum(1 for _ in f) - 1)
+
+    return {'per_jenis': per_jenis, 'foto_terunggah': jumlah_foto,
+            'siap_dikerjakan': seri_belum[:40],
+            'jumlah_siap_dikerjakan': len(seri_belum)}
+
+
 def laporan_cek(cfg, lingkup=None):
     """Semua yang dibutuhkan untuk menghasilkan Excel, per berkas keluaran."""
     data = inti.saring_lingkup(inti.baca_sku(), lingkup or [])
@@ -510,6 +555,8 @@ class Penangan(BaseHTTPRequestHandler):
                     SINGGAHAN.clear()
                     simpan_cache()
                 return self._kirim(hasil)
+            if self.path == '/api/dashboard':
+                return self._kirim(ringkas_status(cfg))
             if self.path == '/api/ringkas_sku':
                 try:
                     data = inti.baca_sku()

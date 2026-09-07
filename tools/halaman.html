@@ -91,7 +91,8 @@ tr.rinci li{margin:2px 0}
 </header>
 
 <nav class="tab">
-  <button class="aktif" data-lembar="sumber">Sumber Data</button>
+  <button class="aktif" data-lembar="dasbor">Dashboard</button>
+  <button data-lembar="sumber">Sumber Data</button>
   <button data-lembar="atur">Pengaturan Produk</button>
   <button data-lembar="folder">1. Folder Produk</button>
   <button data-lembar="siap">2. Cek Kesiapan</button>
@@ -169,7 +170,25 @@ tr.rinci li{margin:2px 0}
 </section>
 
 <!-- ------------------------------------------------------------ SUMBER -->
-<section class="lembar aktif" id="lembar-sumber">
+<section class="lembar aktif" id="lembar-dasbor">
+  <div class="baris" style="margin-bottom:12px">
+    <button class="utama" onclick="muatDasbor()">Muat ulang</button>
+    <span id="statusDasbor" class="kecil redup"></span>
+  </div>
+  <div id="dasbor"></div>
+  <div class="kartu" style="margin-top:14px">
+    <div class="isi arti">
+      Angka di sini dibaca dari Google Sheet, bukan dari Shopee langsung:
+      kolom <b>FOTO PRODUK</b> menyatakan fotonya sudah dibuat, kolom <b>UPLOAD</b>
+      menyatakan listing itu sudah masuk Shopee. Satu seri di sheet = satu listing.
+      <br><br>Jadi tim yang mengisi kedua kolom itu di sheet yang menentukan
+      ketepatan angkanya. Kalau ada listing yang sudah diupload tapi kolom UPLOAD
+      belum diisi, di sini masih terhitung belum.
+    </div>
+  </div>
+</section>
+
+<section class="lembar" id="lembar-sumber">
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
     <div class="kartu">
       <h2>Folder sumber tiap jenis produk</h2>
@@ -217,7 +236,11 @@ tr.rinci li{margin:2px 0}
             <button onclick="imporSku()">Impor dari berkas Excel…</button>
             <span id="pesanSku" class="kecil redup"></span>
           </div>
-          <div id="ringkasSku" style="margin-top:10px"></div>
+          <details style="margin-top:10px">
+            <summary class="kecil redup" style="cursor:pointer">
+              Lihat daftar seri yang terdaftar <span id="jumlahSeri"></span></summary>
+            <div id="ringkasSku" style="margin-top:8px;max-height:340px;overflow:auto"></div>
+          </details>
           <div class="arti">
             Di Google Sheet: <b>File → Download → Microsoft Excel (.xlsx)</b>, lalu pilih
             berkasnya di sini. Format <code>.xlsx</code> lebih baik daripada CSV karena
@@ -489,6 +512,87 @@ document.querySelectorAll('nav.tab button').forEach(b=>b.onclick=()=>{
   $('#lembar-'+b.dataset.lembar).classList.add('aktif');
 });
 
+function bar(nilai,total,warna){
+  const p=total?Math.round(nilai/total*100):0;
+  return `<div class="bar" style="height:8px"><div style="width:${p}%;background:${warna}"></div></div>`;
+}
+
+function muatDasbor(){
+  $('#statusDasbor').textContent='menghitung…';
+  api('/api/dashboard',{}).then(d=>{
+    $('#statusDasbor').textContent='';
+    if(d.kosong){$('#dasbor').innerHTML='<div class="kartu"><div class="isi">'
+      +'Daftar SKU belum ada. Buka tab Sumber Data lalu tekan '
+      +'<b>Ambil dari Google Sheet</b>.</div></div>';return;}
+
+    const jum=(k,f)=>d.per_jenis.reduce((a,x)=>a+x[k][f],0);
+    const tSeri=jum('seri','total'), sudah=jum('seri','sudah'),
+          siap=jum('seri','siap'), sebagian=jum('seri','sebagian'),
+          kosong=jum('seri','kosong');
+
+    let h=`<div class="kartu"><h2>Ringkasan seluruh produk</h2><div class="isi">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+        ${kotak('Total listing',tSeri,'var(--teks)','semua seri di Google Sheet')}
+        ${kotak('Sudah diupload',sudah,'var(--hijau)','kolom UPLOAD sudah terisi')}
+        ${kotak('Siap, belum diupload',siap,'var(--kuning)','foto lengkap, tinggal dikerjakan')}
+        ${kotak('Foto belum lengkap',sebagian,'var(--biru)','sebagian SKU belum ada foto')}
+        ${kotak('Belum ada foto',kosong,'var(--redup)','belum dibuat sama sekali')}
+      </div>
+      <div style="margin-top:14px">
+        <div class="kecil redup">Kemajuan: <b style="color:var(--hijau)">${sudah}</b>
+          dari ${tSeri} listing sudah diupload
+          (${tSeri?Math.round(sudah/tSeri*100):0}%)</div>
+        ${bar(sudah,tSeri,'var(--hijau)')}
+      </div>
+      <div class="kecil redup" style="margin-top:10px">
+        ${d.foto_terunggah.toLocaleString('id')} foto sudah ada di Cloudflare R2</div>
+    </div></div>`;
+
+    h+='<div class="kartu" style="margin-top:14px"><h2>Per jenis produk</h2><div class="isi">'
+      +'<table><thead><tr><th>Jenis</th><th>Total listing</th><th>Sudah diupload</th>'
+      +'<th>Siap, belum</th><th>Foto belum lengkap</th><th>Belum ada foto</th>'
+      +'<th>Kemajuan</th></tr></thead><tbody>';
+    d.per_jenis.forEach(x=>{
+      const s=x.seri;
+      h+=`<tr><td><b>${x.jenis}</b><div class="redup kecil">${
+          x.sku.total.toLocaleString('id')} SKU</div></td>
+        <td class="angka">${s.total}</td>
+        <td class="angka" style="color:var(--hijau)">${s.sudah}</td>
+        <td class="angka" style="color:var(--kuning)">${s.siap}</td>
+        <td class="angka" style="color:var(--biru)">${s.sebagian}</td>
+        <td class="angka">${s.kosong}</td>
+        <td style="min-width:120px">${bar(s.sudah,s.total,'var(--hijau)')}
+          <span class="redup kecil">${s.total?Math.round(s.sudah/s.total*100):0}%</span></td>
+      </tr>`;
+    });
+    h+='</tbody></table></div></div>';
+
+    if(d.jumlah_siap_dikerjakan){
+      h+=`<div class="kartu" style="margin-top:14px">
+        <h2>Siap dikerjakan — ${d.jumlah_siap_dikerjakan} listing</h2><div class="isi">
+        <div class="kecil redup" style="margin-bottom:8px">Fotonya sudah lengkap menurut
+          sheet, tapi kolom UPLOAD masih kosong.</div>
+        <div style="max-height:320px;overflow:auto"><table><tbody>`
+        +d.siap_dikerjakan.map(x=>`<tr><td class="kecil">${x.jenis}</td>
+          <td class="kecil">${x.seri}</td><td class="angka">${x.sku} SKU</td></tr>`).join('')
+        +'</tbody></table></div>'
+        +(d.jumlah_siap_dikerjakan>d.siap_dikerjakan.length
+          ? `<div class="kecil redup" style="margin-top:6px">menampilkan ${
+             d.siap_dikerjakan.length} teratas</div>`:'')
+        +'</div></div>';
+    }
+    $('#dasbor').innerHTML=h;
+  });
+}
+
+function kotak(judul,nilai,warna,ket){
+  return `<div style="border:1px solid var(--garis);border-radius:8px;padding:12px">
+    <div class="kecil redup">${judul}</div>
+    <div style="font-size:26px;font-weight:600;color:${warna};line-height:1.2">${
+      nilai.toLocaleString('id')}</div>
+    <div class="kecil redup">${ket}</div></div>`;
+}
+
 function muatStatus(){
   api('/api/status').then(s=>{
     $('#akar').textContent=s.akar;
@@ -573,6 +677,7 @@ function simpanTempel(){
 function muatRingkasSku(){
   api('/api/ringkas_sku',{}).then(d=>{
     if(!d.seri.length){$('#ringkasSku').innerHTML='';return;}
+    $('#jumlahSeri').textContent='('+d.seri.length+' seri)';
     $('#ringkasSku').innerHTML='<table><thead><tr><th>Jenis</th><th>Seri</th>'
       +'<th>SKU</th><th>Rentang</th></tr></thead><tbody>'
       +d.seri.map(s=>`<tr><td class="kecil">${s.jenis}</td>
@@ -1174,5 +1279,6 @@ setInterval(()=>{
 },700);
 
 muatStatus(); muatPohon(); gambarBilah(); muatPengaturan(); muatRingkasSku(); muatR2();
+muatDasbor();
 cekPerbarui();
 </script></body></html>
