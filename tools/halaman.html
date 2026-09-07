@@ -116,7 +116,7 @@ tr.rinci li{margin:2px 0}
           <input type="text" id="cari" placeholder="saring nama folder, mis. 00751"
                  style="flex:1;max-width:260px" oninput="saring()">
           <label class="centang kecil"><input type="checkbox" id="hanyaFoto" onchange="saring()">
-            hanya yang ada fotonya</label>
+            hanya yang ada fotonya <span class="redup" id="jumlahTanpaFoto"></span></label>
           <span class="kecil redup">status:</span>
           <select id="saringStatus" class="pilihan" onchange="saring()">
             <option value="">Semua</option>
@@ -1136,28 +1136,38 @@ function saring(){
   const q=$('#cari').value.trim().toLowerCase();
   const hanya=$('#hanyaFoto').checked;
   const status=$('#saringStatus').value;
-  let tampak=0, menunggu=0;
+  let tampak=0, menunggu=0, tersembunyi=0, tanpaFoto=0;
   document.querySelectorAll('tr.jenis').forEach(th=>{
     const buka=th.dataset.buka!=='0';
     let anak=th.nextElementSibling;
     while(anak&&anak.classList.contains('folder')){
       const s=anak.dataset.status?JSON.parse(anak.dataset.status):null;
-      let ok=buka;
-      if(ok&&q) ok=anak.dataset.nama.toLowerCase().includes(q);
+      let lolos=true;
+      if(q) lolos=anak.dataset.nama.toLowerCase().includes(q);
       // Status sebuah baris baru dihitung ketika barisnya terlihat di layar.
       // Kalau baris yang statusnya belum diketahui langsung disembunyikan, dia
       // tidak akan pernah terlihat, jadi statusnya tidak pernah dihitung dan
       // baris itu hilang selamanya. Karena itu yang belum diketahui tetap
       // ditampilkan sampai statusnya datang.
-      if(ok&&hanya&&s) ok=!!s.foto||+anak.dataset.siap>0;
-      if(ok&&status&&s) ok=s.keadaan===status;
-      if(ok&&!s&&(hanya||status)) menunggu++;
+      if(s&&!s.foto) tanpaFoto++;
+      if(lolos&&hanya&&s) lolos=!!s.foto;
+      if(lolos&&status&&s) lolos=s.keadaan===status;
+      if(lolos&&!s&&(hanya||status)) menunggu++;
+      if(!lolos) tersembunyi++;
+      // Baris di bawah judul jenis yang sedang ditutup ikut disembunyikan, tapi
+      // itu bukan hasil saringan — jangan ikut dihitung sebagai yang tersaring.
+      const ok=buka&&lolos;
       anak.style.display=ok?'':'none';
       if(ok)tampak++;
       anak=anak.nextElementSibling;
     }
   });
-  $('#hitung').innerHTML=tampak+' folder tampil'
+  // Hampir semua folder produk ada isinya, jadi saringan "hanya yang ada
+  // fotonya" cuma menyembunyikan segelintir baris. Tanpa angka, kelihatannya
+  // seperti tombol yang tidak berfungsi — jadi sebutkan berapa yang kena.
+  $('#jumlahTanpaFoto').textContent=tanpaFoto?`(${tanpaFoto} tanpa foto)`:'';
+  $('#hitung').innerHTML=`${tampak} folder tampil`
+    +(tersembunyi?` <span class="redup">· ${tersembunyi} disembunyikan saringan</span>`:'')
     +(menunggu?` <span class="redup">· ${menunggu} menunggu dihitung</span>`:'');
 }
 
