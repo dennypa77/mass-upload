@@ -452,8 +452,25 @@ tr.rinci li{margin:2px 0}
         <button onclick="perintah('url')">Ekspor daftar URL</button>
         <button onclick="bukaFolder('output')">Buka folder hasil</button>
       </div>
+      <div class="baris" style="margin-top:12px;align-items:center">
+        <span class="kecil redup">Maks. per berkas:</span>
+        <input type="number" id="batasListing" min="1" max="5000" style="width:90px">
+        <span class="kecil redup">listing &nbsp;/&nbsp;</span>
+        <input type="number" id="batasBaris" min="1" max="200000" style="width:110px">
+        <span class="kecil redup">baris</span>
+        <button onclick="simpanBatas()">Simpan batas</button>
+        <span id="statusBatas" class="kecil redup"></span>
+      </div>
       <div class="arti">
-        Satu berkas Excel dihasilkan per toko per template kategori. Kalau ada folder yang
+        Satu berkas Excel dihasilkan per toko per template kategori. Kalau isinya melebihi
+        batas di atas, berkasnya <b>dipecah otomatis</b> jadi
+        <code>… (bagian 1 dari 3).xlsx</code> dan seterusnya. Tiap bagian berdiri sendiri
+        dan diupload terpisah ke Shopee, urutannya bebas.
+        <br><br>Satu produk tidak pernah terpotong ke dua berkas — seluruh variannya selalu
+        ikut dalam berkas yang sama. Kalau Shopee masih menolak karena berkasnya terlalu
+        besar, kecilkan angka di atas lalu buat ulang; kalau ternyata sanggup lebih banyak,
+        naikkan supaya berkasnya tidak sebanyak itu.
+        <br><br>Kalau ada folder yang
         dipilih di langkah 1, hasilnya ditulis ke <code>output/pilihan/</code> supaya tidak
         menimpa hasil lengkap di <code>output/</code>.
         <br><br>Di Seller Centre Shopee: <b>Produk → Mass Upload → Upload berkas</b>, lalu
@@ -894,6 +911,16 @@ function kelompokProfil(){
   return [...peta.entries()];
 }
 
+function simpanBatas(){
+  $('#statusBatas').textContent='menyimpan…';
+  api('/api/simpan_pengaturan',{berkas:{listing:$('#batasListing').value,
+                                        baris:$('#batasBaris').value}}).then(d=>{
+    $('#statusBatas').innerHTML=d.ok
+      ? '<span style="color:var(--hijau)">tersimpan — buat ulang berkasnya</span>'
+      : `<span style="color:var(--merah)">${d.galat.join('; ')}</span>`;
+  });
+}
+
 function muatPengaturan(){
   api('/api/pengaturan',{}).then(d=>{
     if(!d||!d.jenis){
@@ -903,6 +930,10 @@ function muatPengaturan(){
       return;
     }
     ATUR=d;
+    if(d.berkas){
+      $('#batasListing').value=d.berkas.listing;
+      $('#batasBaris').value=d.berkas.baris;
+    }
     const namaJenis=Object.keys(d.jenis);
     const aktif=window._jenisAktif&&namaJenis.includes(window._jenisAktif)
       ? window._jenisAktif : namaJenis[0];

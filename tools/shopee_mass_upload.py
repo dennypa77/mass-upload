@@ -1199,19 +1199,91 @@ def perintah_cek(cfg, data, diam=False):
 BATAS_LISTING, BATAS_BARIS = 500, 10000
 
 
+def batas_berkas(cfg):
+    """Berapa listing dan baris paling banyak dalam satu berkas Excel.
+
+    Bisa diubah di config kalau Shopee mengubah batasnya, atau kalau ternyata
+    toko ini sanggup menerima berkas yang lebih besar.
+    """
+    return (int(cfg.get('batas_listing') or BATAS_LISTING),
+            int(cfg.get('batas_baris') or BATAS_BARIS))
+
+
+def pecah_listing(listings, batas_listing, batas_baris):
+    """Bagi listing jadi beberapa bagian yang muat batas Shopee.
+
+    Satu listing tidak pernah dipotong ke dua berkas: seluruh variannya harus
+    berada di berkas yang sama, kalau tidak Shopee membacanya sebagai dua produk
+    berbeda yang sama-sama tidak lengkap.
+    """
+    bagian, sekarang, baris = [], [], 0
+    for L in listings:
+        n = len(L['desain'])
+        if sekarang and (len(sekarang) >= batas_listing or baris + n > batas_baris):
+            bagian.append(sekarang)
+            sekarang, baris = [], 0
+        sekarang.append(L)
+        baris += n
+    if sekarang:
+        bagian.append(sekarang)
+    return bagian
+
+
+def nama_bagian(berkas, nomor, dari):
+    """'Toko - Kategori.xlsx' -> 'Toko - Kategori (bagian 1 dari 3).xlsx'."""
+    if dari <= 1:
+        return berkas
+    akar, ekor = os.path.splitext(berkas)
+    return '{} (bagian {} dari {}){}'.format(akar, nomor, dari, ekor)
+
+
+def buang_bagian_basi(tujuan, nama_dasar, dipakai):
+    """Hapus berkas sisa build sebelumnya yang sudah tidak ikut dibuat lagi.
+
+    Build kemarin mungkin menghasilkan satu berkas utuh, hari ini pecahannya
+    tiga. Kalau sisa yang lama dibiarkan, gampang sekali ikut terupload padahal
+    isinya sudah kedaluwarsa. Yang dihapus hanya berkas dengan nama persis
+    buatan tools ini, berkas lain di folder itu tidak disentuh.
+    """
+    if not os.path.isdir(tujuan):
+        return
+    for dasar in nama_dasar:
+        akar, ekor = os.path.splitext(dasar)
+        pola = re.compile(r'^{}(?: \(bagian \d+ dari \d+\))?{}$'.format(
+            re.escape(akar), re.escape(ekor)), re.I)
+        for ada in os.listdir(tujuan):
+            if pola.match(ada) and ada not in dipakai:
+                try:
+                    os.remove(os.path.join(tujuan, ada))
+                    print('[build] {:<58} dihapus - sisa build sebelumnya'.format(ada))
+                except OSError:
+                    pass
+
+
 def perintah_build(cfg, data, sub=None):
     paket = kumpulkan(cfg, data)
-    besar = [(b, len(L), sum(len(x['desain']) for x in L)) for b, (_, L) in paket.items()
-             if len(L) > BATAS_LISTING or sum(len(x['desain']) for x in L) > BATAS_BARIS]
-    if besar:
-        print('[build] ! berkas berikut sangat besar dan kemungkinan ditolak Shopee:')
-        for b, n, r in besar:
-            print('     {:<46} {} listing / {} baris'.format(b[:46], n, r))
-        print('     Shopee membatasi jumlah produk per berkas. Pilih folder yang mau')
-        print('     dikerjakan di langkah 1 supaya hasilnya terpecah jadi bagian kecil.')
+    batas_l, batas_b = batas_berkas(cfg)
     tujuan = os.path.join(dir_keluaran(), sub) if sub else dir_keluaran()
-    terkunci = []
+
+    rencana = []
     for berkas, (tpl, listings) in paket.items():
+        bagian = pecah_listing(listings, batas_l, batas_b)
+        for i, kelompok in enumerate(bagian, 1):
+            rencana.append((nama_bagian(berkas, i, len(bagian)), tpl, kelompok))
+
+    dipecah = len(rencana) - len(paket)
+    if dipecah > 0:
+        print('[build] Shopee membatasi jumlah produk per berkas, jadi hasilnya '
+              'dipecah otomatis:')
+        print('     maks. {} listing / {} baris per berkas -> {} berkas jadi {} berkas'
+              .format(batas_l, batas_b, len(paket), len(rencana)))
+        print('     Tiap bagian berdiri sendiri dan diupload terpisah ke Shopee, '
+              'urutannya bebas.')
+
+    buang_bagian_basi(tujuan, list(paket), {b for b, _, _ in rencana})
+
+    terkunci = []
+    for berkas, tpl, listings in rencana:
         try:
             n = tulis_excel(cfg, os.path.join(AKAR, tpl), os.path.join(tujuan, berkas), listings)
         except PermissionError:

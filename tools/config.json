@@ -268,5 +268,7 @@
       "domain": "https://ganci.whatslink.group",
       "_rahasia": "Access Key ID dan Secret Access Key TIDAK ditaruh di sini. Berkas ini ikut ke GitHub yang public. Simpan di data/lokal.json."
     }
-  }
+  },
+  "batas_listing": 500,
+  "batas_baris": 10000
 }

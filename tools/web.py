@@ -293,11 +293,31 @@ def baca_pengaturan(cfg):
                    for p, v in cfg['profil'].items()},
         'batas': {'deskripsi': [inti.MIN_DESK, inti.MAKS_DESK],
                   'judul': [5, inti.MAKS_JUDUL]},
+        'berkas': dict(zip(('listing', 'baris'), inti.batas_berkas(cfg))),
     }
 
 
 def simpan_pengaturan(cfg, badan):
-    """Simpan perubahan ke config.json setelah diperiksa."""
+    """Simpan perubahan ke config.json setelah diperiksa.
+
+    cfg yang berjalan adalah gabungan config.json + data/lokal.json, dan
+    lokal.json memuat kunci Cloudflare R2 serta letak folder tiap komputer.
+    config.json ikut terkirim ke GitHub yang public, jadi yang ditulis ke sana
+    hanya isi berkas itu sendiri yang dibaca ulang dari disk — perubahan
+    ditempelkan ke situ, bukan cfg gabungan yang sedang dipakai.
+    """
+    with open(inti.CONFIG, encoding='utf-8') as f:
+        bersama = json.load(f)
+
+    def setel(*jalur_nilai):
+        """Tulis nilai ke cfg yang berjalan sekaligus ke config.json bersama."""
+        *jalur, nilai = jalur_nilai
+        for wadah in (cfg, bersama):
+            simpul = wadah
+            for k in jalur[:-1]:
+                simpul = simpul.setdefault(k, {})
+            simpul[jalur[-1]] = nilai
+
     galat = []
     for nama, isi in (badan.get('jenis') or {}).items():
         if nama not in cfg['jenis']:
@@ -313,9 +333,9 @@ def simpan_pengaturan(cfg, badan):
             if not kecil <= nilai <= besar:
                 galat.append('{} · {}: harus {} sampai {}'.format(nama, label, kecil, besar))
                 continue
-            cfg['jenis'][nama][kunci] = nilai
+            setel('jenis', nama, kunci, nilai)
         if 'spec' in isi:
-            cfg['jenis'][nama]['spec'] = isi['spec']
+            setel('jenis', nama, 'spec', isi['spec'])
         j = cfg['jenis'][nama]
         if j['min_order'] and round(j['harga_paket'] / j['min_order']) < 99:
             galat.append('{}: harga per pcs jadi di bawah Rp99'.format(nama))
@@ -332,15 +352,32 @@ def simpan_pengaturan(cfg, badan):
                 galat.append('deskripsi {} · {}: {} karakter, batas {}-{}'.format(
                     profil, jenis, panjang, inti.MIN_DESK, inti.MAKS_DESK))
                 continue
-            cfg['profil'][profil]['deskripsi'][jenis] = teks
+            setel('profil', profil, 'deskripsi', jenis, teks)
         for jenis, pasangan in (isi.get('judul') or {}).items():
             if jenis in cfg['profil'][profil]['judul'] and pasangan:
-                cfg['profil'][profil]['judul'][jenis] = [list(p[:2]) for p in pasangan]
+                setel('profil', profil, 'judul', jenis, [list(p[:2]) for p in pasangan])
+
+    # Batas ukuran berkas Excel. Angkanya perkiraan yang aman, bukan angka resmi
+    # dari Shopee, jadi memang perlu bisa disetel kalau kenyataannya beda.
+    berkas = badan.get('berkas') or {}
+    for kunci, label, kecil, besar in (('listing', 'listing per berkas', 1, 5000),
+                                       ('baris', 'baris per berkas', 1, 200000)):
+        if kunci not in berkas:
+            continue
+        try:
+            nilai = int(str(berkas[kunci]).replace('.', '').replace(',', '').strip())
+        except ValueError:
+            galat.append('{}: bukan angka'.format(label))
+            continue
+        if not kecil <= nilai <= besar:
+            galat.append('{}: harus {} sampai {}'.format(label, kecil, besar))
+            continue
+        setel('batas_' + kunci, nilai)
 
     if galat:
         return {'ok': False, 'galat': galat}
     with open(inti.CONFIG, 'w', encoding='utf-8') as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+        json.dump(bersama, f, ensure_ascii=False, indent=2)
     catat('[ui] pengaturan produk disimpan')
     return {'ok': True}
 
