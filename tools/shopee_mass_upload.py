@@ -1051,6 +1051,18 @@ def tulis_manifest_r2(cfg, kunci_url):
     return len(kunci_url)
 
 
+def jalur_manifest_r2():
+    """Kumpulan path yang tercatat sudah ada di bucket, apa pun yang mengunggah.
+
+    Dibaca dari berkas, bukan dari bucket: membaca isi bucket makan lebih dari
+    satu menit, sedangkan berkas ini sudah disegarkan tiap selesai mengunggah.
+    """
+    if not os.path.exists(MANIFEST_R2):
+        return set()
+    with open(MANIFEST_R2, encoding='utf-8-sig', newline='') as f:
+        return {r['path'] for r in csv.DictReader(f) if r.get('path') and r.get('url')}
+
+
 def baca_manifest_r2(cfg):
     """{toko: {KUNCI: url}} dari daftar bersama, tanpa perlu kunci akses."""
     if not os.path.exists(MANIFEST_R2):

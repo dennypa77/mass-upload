@@ -301,13 +301,52 @@ def segarkan_manifest_r2(inti, cfg, cetak=print):
     baru = jumlah - sebelum
     cetak('[daftar] data/foto_r2.csv disegarkan: {} foto di bucket{}'.format(
         jumlah, ' (+{} sejak terakhir)'.format(baru) if baru > 0 else ''))
+
+    # Bucket adalah kebenarannya, jadi database ikut diluruskan: baris yang
+    # fotonya ternyata ada di sana ditandai terunggah, walau yang mengunggah
+    # komputer lain atau tandanya pernah hilang.
+    if os.path.exists(inti.DB_PATH):
+        db = gudang.buka(inti.DB_PATH)
+        try:
+            sebelum_db = gudang.jumlah(db)[1]
+            gudang.tandai_terunggah(db, list(semua))
+            selisih = gudang.jumlah(db)[1] - sebelum_db
+        finally:
+            db.close()
+        if selisih:
+            cetak('[daftar] {} baris database ikut diluruskan jadi sudah terunggah'
+                  .format(selisih))
     return jumlah
 
 
-def kirim_r2(inti, cfg, db, temuan, maju):
-    """Unggah foto ke Cloudflare R2, beberapa berkas sekaligus."""
+def kirim_r2(inti, cfg, db, temuan, maju, paksa=False):
+    """Unggah foto ke Cloudflare R2, beberapa berkas sekaligus.
+
+    Foto yang sudah pernah naik dilewati. Dua sumbernya: database komputer ini
+    dan daftar bersama data/foto_r2.csv — yang kedua penting supaya folder yang
+    sudah dikerjakan komputer lain tidak diunggah ulang dari sini.
+    """
     from concurrent.futures import ThreadPoolExecutor
     klien = modul_r2.dari_config(cfg)
+
+    if paksa:
+        sisa, sudah = temuan, []
+    else:
+        ada = gudang.sudah_terunggah(db) | inti.jalur_manifest_r2()
+        sisa = [t for t in temuan if t['path_repo'] not in ada]
+        sudah = [t for t in temuan if t['path_repo'] in ada]
+        for t in sudah:
+            t['url'] = klien.alamat(t['path_repo'])
+
+    if sudah:
+        print('[3/3] {} foto sudah ada di R2, dilewati'.format(len(sudah)))
+        gudang.simpan(db, sudah)
+        gudang.tandai_terunggah(db, [t['path_repo'] for t in sudah])
+    if not sisa:
+        print('[3/3] tidak ada yang perlu diunggah — folder ini sudah selesai')
+        return 0
+    temuan = sisa
+
     total_mb = _mb(sum(t['ukuran'] for t in temuan))
     print('[3/3] mengunggah {} foto ({:.1f} MB) ke Cloudflare R2 …'.format(
         len(temuan), total_mb))
@@ -341,6 +380,7 @@ def kirim_r2(inti, cfg, db, temuan, maju):
         gudang.simpan(db, berhasil)
         gudang.tandai_terunggah(db, [t['path_repo'] for t in berhasil])
     print('[3/3] {} terkirim, {} gagal'.format(len(berhasil), hitung['gagal']))
+    return len(berhasil)
 
 
 def _sudah_tersalin(sumber, tujuan):
@@ -445,7 +485,7 @@ def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
 
     # ---------------------------------------------------------------- 3. kirim
     if inti.mode_penyimpanan(cfg) == 'r2':
-        kirim_r2(inti, cfg, db, temuan, maju)
+        baru = kirim_r2(inti, cfg, db, temuan, maju, paksa=paksa)
         n, u = gudang.jumlah(db)
         db.close()
         print('[3/3] selesai. Database: {} foto, {} sudah terunggah'.format(n, u))
@@ -454,7 +494,7 @@ def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
             print('       ' + temuan[0]['url'])
         for t in tak_dikenal[:5]:
             print('   ! dilewati: {}'.format(t))
-        return {'ok': True, 'foto': len(temuan), 'terkirim': len(temuan)}
+        return {'ok': True, 'foto': len(temuan), 'terkirim': baru}
 
     bagian = _bagi(temuan)
     print('[3/3] mengunggah ke GitHub: {:.1f} MB dipecah jadi {} bagian '

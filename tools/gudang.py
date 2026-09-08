@@ -54,13 +54,28 @@ def buka(path):
 
 
 def simpan(db, baris):
-    """Tambah/perbarui banyak baris sekaligus. `baris` = daftar dict."""
+    """Tambah/perbarui banyak baris sekaligus. `baris` = daftar dict.
+
+    Tanda "sudah terunggah" tidak pernah dicabut di sini. Menyalin ulang foto
+    tidak menghapusnya dari tempat penyimpanan, jadi baris yang sudah bertanda 1
+    tetap 1 — kecuali kalau tujuannya berganti nama, karena berkas di alamat
+    yang baru memang belum tentu ada.
+    """
     waktu = datetime.now().isoformat(timespec='seconds')
     isi = [tuple(b.get(k, waktu if k == 'waktu' else None) for k in KOLOM) for b in baris]
+    perbarui = []
+    for k in KOLOM:
+        if k in ('toko', 'kunci'):
+            continue
+        if k == 'diunggah':
+            perbarui.append('diunggah=CASE WHEN foto.path_repo IS excluded.path_repo '
+                            'THEN MAX(foto.diunggah, excluded.diunggah) '
+                            'ELSE excluded.diunggah END')
+        else:
+            perbarui.append('{0}=excluded.{0}'.format(k))
     db.executemany(
         'INSERT INTO foto ({0}) VALUES ({1}) ON CONFLICT(toko, kunci) DO UPDATE SET {2}'.format(
-            ', '.join(KOLOM), ', '.join('?' * len(KOLOM)),
-            ', '.join('{0}=excluded.{0}'.format(k) for k in KOLOM if k not in ('toko', 'kunci'))),
+            ', '.join(KOLOM), ', '.join('?' * len(KOLOM)), ', '.join(perbarui)),
         isi)
     db.commit()
     return len(isi)
@@ -99,6 +114,12 @@ def peta_url(db, hanya_terunggah=True):
     for r in db.execute(sql):
         hasil.setdefault(r['toko'], {})[r['kunci'].upper()] = r['url']
     return hasil
+
+
+def sudah_terunggah(db):
+    """Kumpulan path_repo yang tercatat sudah naik dari komputer ini."""
+    return {r['path_repo'] for r in db.execute(
+        'SELECT path_repo FROM foto WHERE diunggah = 1 AND path_repo IS NOT NULL')}
 
 
 def belum_terunggah(db):

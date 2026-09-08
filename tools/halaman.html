@@ -121,8 +121,8 @@ tr.rinci li{margin:2px 0}
           <select id="saringStatus" class="pilihan" onchange="saring()">
             <option value="">Semua</option>
             <option value="baru">Foto ada, belum diproses</option>
-            <option value="sebagian">Sebagian diupload</option>
-            <option value="siap">Siap dibuat listing</option>
+            <option value="sebagian">Sebagian sudah di R2</option>
+            <option value="siap">Sudah di R2, siap listing</option>
             <option value="tanpasku">SKU belum diimpor</option>
             <option value="tanpatoko">Folder toko tidak dikenali</option>
             <option value="kosong">Belum ada foto</option>
@@ -165,9 +165,9 @@ tr.rinci li{margin:2px 0}
         <dl>
           <dt><span class="tanda t-kosong">belum ada foto</span></dt><dd>foldernya ada tapi belum berisi gambar</dd>
           <dt><span class="tanda t-baru">foto ada, belum diproses</span></dt><dd>siap diproses — tekan “Proses folder ini”</dd>
-          <dt><span class="tanda t-sebagian">sebagian diupload</span></dt><dd>sebagian foto sudah di GitHub, sisanya belum</dd>
+          <dt><span class="tanda t-sebagian">sebagian sudah di R2</span></dt><dd>sebagian fotonya sudah terunggah, sisanya belum — proses lagi untuk melanjutkan</dd>
           <dt><span class="tanda t-tanpasku">SKU belum diimpor</span></dt><dd>fotonya ada, tapi SKU-nya tidak ada di sku.csv sehingga belum bisa masuk listing mana pun</dd>
-          <dt><span class="tanda t-siap">siap dibuat listing</span></dt><dd>foto lengkap, sudah di GitHub, dan SKU-nya terdaftar</dd>
+          <dt><span class="tanda t-siap">sudah di R2 · siap listing</span></dt><dd><b>folder ini sudah selesai diunggah</b> — tidak perlu diproses lagi. Foto lengkap di Cloudflare R2 dan SKU-nya terdaftar</dd>
         </dl>
       </div>
     </div>
@@ -624,8 +624,8 @@ function muatDasbor(){
         Seluruh ${F.total} folder sudah dihitung.</div>`}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
         ${kotak('Foto ada, belum diproses',st('baru'),'var(--kuning)','siap diunggah ke R2')}
-        ${kotak('Sebagian diupload',st('sebagian'),'var(--biru)','sebagian foto sudah naik')}
-        ${kotak('Siap dibuat listing',st('siap'),'var(--hijau)','foto lengkap di R2')}
+        ${kotak('Sebagian sudah di R2',st('sebagian'),'var(--biru)','sebagian foto sudah naik')}
+        ${kotak('Sudah di R2, selesai',st('siap'),'var(--hijau)','tidak perlu diproses lagi')}
         ${kotak('SKU belum diimpor',st('tanpasku'),'var(--merah)','foto ada, SKU belum terdaftar')}
         ${kotak('Folder toko tak dikenali',st('tanpatoko'),'var(--merah)','fotonya tidak di TOKO 1/2/3')}
         ${kotak('Belum ada foto',st('kosong'),'var(--redup)','folder kosong')}

@@ -28,7 +28,7 @@ SINGGAHAN = {}                # cache hasil pemindaian folder
 BERKAS_CACHE = os.path.join(inti.AKAR, 'data', 'cache_folder.json')
 # Dinaikkan tiap kali isi hasil status_folder berubah bentuk, supaya cache lama
 # dari versi sebelumnya dibuang, bukan ditampilkan sebagai angka yang salah.
-VERSI_CACHE = 2
+VERSI_CACHE = 3
 
 
 def muat_cache():
@@ -220,9 +220,9 @@ def status_folder(cfg, jenis, path, dari, sampai, segar=False):
     elif n_sku == 0:
         keadaan, label = 'tanpasku', 'SKU belum diimpor'
     elif n_unggah and n_unggah >= n_db and n_db >= n_sku:
-        keadaan, label = 'siap', 'siap dibuat listing'
+        keadaan, label = 'siap', 'sudah di R2 · siap listing'
     elif n_db:
-        keadaan, label = 'sebagian', 'sebagian diupload'
+        keadaan, label = 'sebagian', 'sebagian sudah di R2'
     else:
         keadaan, label = 'baru', 'foto ada, belum diproses'
 
@@ -603,8 +603,13 @@ class Penangan(BaseHTTPRequestHandler):
 
                 def kerja():
                     modul_unggah.proses_banyak(inti, cfg, daftar, push=push, lapor=lapor)
+                    letak = {f['path']: (j['jenis'], f) for j in pohon(cfg) for f in j['folder']}
                     for p in daftar:
                         SINGGAHAN.pop(p, None)
+                        if p in letak:
+                            jenis, f = letak[p]
+                            s = status_folder(cfg, jenis, p, f['dari'], f['sampai'], segar=True)
+                            print('[status] {:<28} {}'.format(f['nama'], s['label']))
                     simpan_cache()
 
                 nama = 'unggah' if len(daftar) == 1 else 'unggah {} folder'.format(len(daftar))
