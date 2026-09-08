@@ -664,6 +664,11 @@ class Penangan(BaseHTTPRequestHandler):
                     return self._kirim({'batal': True})
                 return self._kirim({'mulai': di_latar(
                     'pasang template', lambda: inti.pasang_template(cfg, berkas))})
+            if self.path == '/api/segarkan_r2':
+                return self._kirim({'mulai': di_latar('segarkan daftar R2', lambda: (
+                    modul_unggah.segarkan_manifest_r2(inti, cfg),
+                    print('[daftar] commit data/foto_r2.csv supaya komputer yang '
+                          'tidak punya kunci R2 ikut memakainya')))})
             if self.path == '/api/r2':
                 lokal = inti.baca_lokal()
                 r = (lokal.get('penyimpanan') or {}).get('r2') or {}

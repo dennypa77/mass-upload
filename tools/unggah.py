@@ -109,11 +109,15 @@ def kenali_toko(cfg, dirpath):
         TOKO 1 / toko_2 / Toko3 / FOTO_1      -> nomor toko langsung
         Graphica Key / kaitin.aja             -> dicocokkan ke nama toko di config
     """
+    # Hanya nomor toko yang benar-benar ada di config yang diterima. Tanpa ini
+    # folder salah ketik seperti "TOKO 31" ikut lolos jadi toko "toko31", dan
+    # fotonya terunggah ke alamat yang tidak pernah dicari waktu membuat Excel.
+    sah = {t['folder_foto'] for t in cfg['toko']}
     bagian = os.path.normpath(dirpath).split(os.sep)
     for potong in bagian[::-1]:
         potong = potong.strip()
         m = re.match(r'^(?:toko|foto|shop|store)[\s_.-]*(\d+)$', potong, re.I)
-        if m:
+        if m and 'toko' + m.group(1) in sah:
             return 'toko' + m.group(1)
     # cocokkan dengan nama toko di config, mis. folder bernama "Graphica Key"
     for potong in bagian[::-1]:
@@ -273,6 +277,31 @@ def migrasi_r2(inti, cfg, cetak=print):
     cetak('[migrasi] selesai — {} gagal, {} foto tercatat di data/foto_r2.csv'.format(
         hitung['gagal'], jumlah))
     cetak('[migrasi] commit berkas itu supaya komputer lain ikut memakainya')
+
+
+def segarkan_manifest_r2(inti, cfg, cetak=print):
+    """Tulis ulang data/foto_r2.csv dari isi bucket yang sebenarnya.
+
+    Bucket adalah satu-satunya sumber kebenaran, bukan database di komputer ini.
+    Jadi kalau dua komputer mengunggah folder yang berbeda, siapa pun yang
+    menyegarkan daftar ini akan mendapat gabungan hasil keduanya — tanpa perlu
+    saling menunggu atau bertukar berkas dulu.
+    """
+    klien = modul_r2.dari_config(cfg)
+    if not klien:
+        cetak('[daftar] mode penyimpanan bukan r2, daftar tidak disegarkan')
+        return 0
+    sebelum = sum(len(v) for v in inti.baca_manifest_r2(cfg).values())
+    try:
+        semua = klien.daftar('foto-upload/')
+    except Exception as e:
+        cetak('[daftar] gagal membaca isi bucket: {}'.format(e))
+        return 0
+    jumlah = inti.tulis_manifest_r2(cfg, {k: klien.alamat(k) for k in semua})
+    baru = jumlah - sebelum
+    cetak('[daftar] data/foto_r2.csv disegarkan: {} foto di bucket{}'.format(
+        jumlah, ' (+{} sejak terakhir)'.format(baru) if baru > 0 else ''))
+    return jumlah
 
 
 def kirim_r2(inti, cfg, db, temuan, maju):
@@ -506,7 +535,10 @@ def proses_banyak(inti, cfg, folder_daftar, push=True, lapor=None, paksa=False):
         print('[unggah] tidak ada folder yang dipilih')
         return
     if total == 1:
-        return proses(inti, cfg, folder_daftar[0], push=push, lapor=lapor, paksa=paksa)
+        r = proses(inti, cfg, folder_daftar[0], push=push, lapor=lapor, paksa=paksa)
+        if push and (r or {}).get('terkirim'):
+            segarkan_manifest_r2(inti, cfg)
+        return r
 
     print('[unggah] {} folder akan diproses berurutan:'.format(total))
     for i, f in enumerate(folder_daftar, 1):
@@ -547,6 +579,10 @@ def proses_banyak(inti, cfg, folder_daftar, push=True, lapor=None, paksa=False):
     if n_ok < total:
         print('   Folder yang gagal bisa dijalankan ulang; yang sudah berhasil '
               'tidak akan disalin ulang.')
+    # Sekali saja di akhir, bukan tiap folder: membaca isi bucket yang berisi
+    # ratusan ribu foto makan lebih dari satu menit.
+    if push and n_kirim:
+        segarkan_manifest_r2(inti, cfg)
     return {'ok': n_ok == total, 'folder': total, 'berhasil': n_ok, 'foto': n_foto}
 
 

@@ -283,12 +283,22 @@ tr.rinci li{margin:2px 0}
           <div class="baris" style="margin-top:8px">
             <button class="utama" onclick="simpanR2()">Simpan kunci</button>
             <button onclick="ujiR2()">Uji koneksi</button>
+            <button onclick="segarkanR2()">Segarkan daftar foto</button>
             <span id="pesanR2" class="kecil redup"></span>
           </div>
           <div class="arti">
             Kunci ini <b>hanya perlu di komputer yang mengunggah foto</b>. Komputer yang
             cuma membuat berkas Excel tidak perlu — URL foto dibaca dari
             <code>data/foto_r2.csv</code> yang ikut diperbarui.
+            <br><br><b>Beberapa komputer boleh mengunggah bersamaan</b> — bucket-nya sama,
+            dan tiap foto punya alamat sendiri, jadi tidak saling menimpa. Yang perlu
+            diatur cuma pembagian foldernya, supaya dua orang tidak mengerjakan folder
+            yang sama (tidak rusak, hanya terbuang waktu).
+            <br><br><b>Segarkan daftar foto</b> membaca ulang isi bucket lalu menulis
+            <code>data/foto_r2.csv</code>. Daftar itu memuat foto dari <i>semua</i>
+            komputer, bukan cuma yang diunggah komputer ini — jadi tekan itu sebelum
+            membuat Excel kalau ada orang lain yang juga sedang mengunggah. Sesudah
+            selesai, commit berkasnya supaya komputer tanpa kunci ikut memakainya.
             <br><br>Disimpan di <code>data/lokal.json</code>, tidak ikut ke GitHub.
             Ambil kuncinya di Cloudflare → R2 → Manage API Tokens.
           </div>
@@ -805,6 +815,13 @@ function simpanR2(){
   });
 }
 function ujiR2(){ $('#pesanR2').textContent='menguji…'; muatR2(true); }
+function segarkanR2(){
+  $('#pesanR2').textContent='membaca isi bucket…';
+  api('/api/segarkan_r2',{}).then(r=>{
+    if(!r.mulai){$('#pesanR2').textContent='';
+      alert('Masih ada pekerjaan lain yang berjalan.');}
+  });
+}
 
 function cekPerbarui(){
   const el=$('#statusPerbarui'); el.textContent='memeriksa…';
