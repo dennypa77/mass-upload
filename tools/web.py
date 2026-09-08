@@ -28,7 +28,7 @@ SINGGAHAN = {}                # cache hasil pemindaian folder
 BERKAS_CACHE = os.path.join(inti.AKAR, 'data', 'cache_folder.json')
 # Dinaikkan tiap kali isi hasil status_folder berubah bentuk, supaya cache lama
 # dari versi sebelumnya dibuang, bukan ditampilkan sebagai angka yang salah.
-VERSI_CACHE = 3
+VERSI_CACHE = 4
 
 
 def muat_cache():
@@ -157,26 +157,59 @@ def _indeks_sku(_ingatan={}):
     return hasil
 
 
-def _indeks_db(_ingatan={}):
-    """{jenis: ([nomor], [nomor yang sudah terunggah])} dari database foto."""
-    if not os.path.exists(inti.DB_PATH):
-        return {}
-    cap = os.path.getmtime(inti.DB_PATH)
+def _cap(path):
+    return os.path.getmtime(path) if os.path.exists(path) else 0
+
+
+def _indeks_db(cfg, _ingatan={}):
+    """{JENIS: ([nomor], [nomor yang sudah terunggah])} foto yang sudah dikerjakan.
+
+    Dua sumber, digabung: database komputer ini, dan daftar bersama
+    data/foto_r2.csv yang isinya seluruh bucket. Yang kedua membuat folder yang
+    diunggah dari komputer lain ikut terbaca "sudah di R2" di sini — tanpa itu
+    tiap komputer cuma melihat hasil kerjanya sendiri dan mengira folder yang
+    sudah selesai masih perlu diproses.
+
+    Dihitung dari pasangan path, bukan sekadar nomor SKU, supaya foto yang
+    tercatat di kedua sumber tidak terhitung dua kali.
+    """
+    cap = (_cap(inti.DB_PATH), _cap(inti.MANIFEST_R2))
     if _ingatan.get('cap') == cap:
         return _ingatan['isi']
+
+    ada, naik = {}, set()          # path -> (JENIS, nomor) ; path yang sudah di R2
+    if os.path.exists(inti.DB_PATH):
+        db = gudang.buka(inti.DB_PATH)
+        try:
+            for r in db.execute('SELECT jenis, kunci, path_repo, diunggah FROM foto'):
+                n = inti.nomor_sku(r['kunci'] or '')
+                if not n or not r['path_repo']:
+                    continue
+                ada[r['path_repo']] = ((r['jenis'] or '').upper(), n)
+                if r['diunggah']:
+                    naik.add(r['path_repo'])
+        finally:
+            db.close()
+
+    # Daftar bersama menyebut path, bukan jenis, jadi jenisnya dikenali dari
+    # awalan SKU pada nama berkasnya — sama seperti waktu foto itu dideteksi.
+    dari_prefix = {j['prefix_sku'].upper(): nama for nama, j in cfg['jenis'].items()}
+    for jalur in inti.jalur_manifest_r2():
+        # nomor_sku hanya menerima kode SKU utuh, jadi ekstensinya dibuang dulu
+        berkas = os.path.splitext(jalur.rsplit('/', 1)[-1])[0]
+        n = inti.nomor_sku(berkas)
+        jenis = dari_prefix.get(berkas.split('-', 1)[0].upper())
+        if not n or not jenis:
+            continue
+        ada[jalur] = (jenis.upper(), n)
+        naik.add(jalur)
+
     hasil = {}
-    db = gudang.buka(inti.DB_PATH)
-    try:
-        for r in db.execute('SELECT jenis, kunci, diunggah FROM foto'):
-            n = inti.nomor_sku(r['kunci'] or '')
-            if not n:
-                continue
-            semua, terunggah = hasil.setdefault((r['jenis'] or '').upper(), ([], []))
-            semua.append(n)
-            if r['diunggah']:
-                terunggah.append(n)
-    finally:
-        db.close()
+    for jalur, (jenis, n) in ada.items():
+        semua, terunggah = hasil.setdefault(jenis, ([], []))
+        semua.append(n)
+        if jalur in naik:
+            terunggah.append(n)
     for semua, terunggah in hasil.values():
         semua.sort()
         terunggah.sort()
@@ -207,7 +240,7 @@ def status_folder(cfg, jenis, path, dari, sampai, segar=False):
             n_foto_toko += len(gambar)
 
     n_sku = _dalam(_indeks_sku().get(jenis.upper(), []), dari, sampai)
-    semua, terunggah = _indeks_db().get(jenis.upper(), ([], []))
+    semua, terunggah = _indeks_db(cfg).get(jenis.upper(), ([], []))
     n_db = _dalam(semua, dari, sampai)
     n_unggah = _dalam(terunggah, dari, sampai)
 
