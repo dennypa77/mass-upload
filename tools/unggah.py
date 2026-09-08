@@ -437,22 +437,30 @@ def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
     print('[1/3] menyalin & rename ke foto-upload/ ({} berkas sekaligus) …'.format(serentak))
     hitung = {'selesai': 0, 'kecil': 0, 'lewat': 0}
     kunci = threading.Lock()
+    gagal = []
 
     def kerjakan(t):
-        tujuan = os.path.join(inti.DIR_FOTO, t['toko'], t['slug'])
-        os.makedirs(tujuan, exist_ok=True)
-        akhir = os.path.join(tujuan, t['nama_tujuan'])
-        t['file_lokal'] = akhir
-        if not paksa and _sudah_tersalin(t['sumber'], akhir):
-            t['ukuran'] = os.path.getsize(akhir)
+        # Satu foto yang bermasalah tidak boleh menggugurkan seluruh folder:
+        # dulu satu nama berkas yang ditolak Windows membatalkan 159 foto
+        # sekaligus di tengah jalan. Yang gagal dicatat, sisanya jalan terus.
+        try:
+            tujuan = os.path.join(inti.DIR_FOTO, t['toko'], t['slug'])
+            os.makedirs(tujuan, exist_ok=True)
+            akhir = os.path.join(tujuan, t['nama_tujuan'])
+            t['file_lokal'] = akhir
+            if not paksa and _sudah_tersalin(t['sumber'], akhir):
+                t['ukuran'] = os.path.getsize(akhir)
+                with kunci:
+                    hitung['lewat'] += 1
+            else:
+                kecil = inti.salin_muat(t['sumber'], akhir)
+                t['ukuran'] = os.path.getsize(akhir)
+                with kunci:
+                    if kecil:
+                        hitung['kecil'] += 1
+        except Exception as e:
             with kunci:
-                hitung['lewat'] += 1
-        else:
-            kecil = inti.salin_muat(t['sumber'], akhir)
-            t['ukuran'] = os.path.getsize(akhir)
-            with kunci:
-                if kecil:
-                    hitung['kecil'] += 1
+                gagal.append((t, e))
         with kunci:
             hitung['selesai'] += 1
             n = hitung['selesai']
@@ -463,9 +471,23 @@ def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
     with ThreadPoolExecutor(max_workers=serentak) as kolam:
         list(kolam.map(kerjakan, temuan))
 
+    if gagal:
+        buruk = {id(t) for t, _ in gagal}
+        temuan = [t for t in temuan if id(t) not in buruk]
+        print('   ! {} foto gagal disalin, dilewati:'.format(len(gagal)))
+        for t, e in gagal[:5]:
+            print('       {} <- {}: {}'.format(t['nama_tujuan'], t['sumber'], e))
+        if len(gagal) > 5:
+            print('       … dan {} lagi'.format(len(gagal) - 5))
+        if not temuan:
+            print('[1/3] tidak ada foto yang berhasil disalin, dihentikan')
+            return {'ok': False, 'alasan': 'semua foto gagal disalin', 'foto': 0}
+
     total_mb = _mb(sum(t['ukuran'] for t in temuan))
     print('[1/3] selesai — {} foto, {:.1f} MB, {} dikecilkan, {} dilewati '
-          '(sudah tersalin)'.format(len(temuan), total_mb, hitung['kecil'], hitung['lewat']))
+          '(sudah tersalin){}'.format(len(temuan), total_mb, hitung['kecil'],
+                                      hitung['lewat'],
+                                      ', {} gagal'.format(len(gagal)) if gagal else ''))
 
     # ---------------------------------------------------------------- 2. database
     base = (cfg['foto'].get('base_url') or '').rstrip('/')
@@ -481,7 +503,8 @@ def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
     if not push:
         print('[3/3] dilewati — upload tidak dicentang')
         db.close()
-        return {'ok': True, 'foto': len(temuan), 'terkirim': 0}
+        return {'ok': not gagal, 'foto': len(temuan), 'terkirim': 0,
+                'alasan': '{} foto gagal disalin'.format(len(gagal)) if gagal else None}
 
     # ---------------------------------------------------------------- 3. kirim
     if inti.mode_penyimpanan(cfg) == 'r2':
@@ -494,7 +517,8 @@ def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
             print('       ' + temuan[0]['url'])
         for t in tak_dikenal[:5]:
             print('   ! dilewati: {}'.format(t))
-        return {'ok': True, 'foto': len(temuan), 'terkirim': baru}
+        return {'ok': not gagal, 'foto': len(temuan), 'terkirim': baru,
+                'alasan': '{} foto gagal disalin'.format(len(gagal)) if gagal else None}
 
     bagian = _bagi(temuan)
     print('[3/3] mengunggah ke GitHub: {:.1f} MB dipecah jadi {} bagian '

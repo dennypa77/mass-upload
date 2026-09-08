@@ -317,9 +317,17 @@ def dir_jenis(cfg, jenis):
 
 
 def kode_seri(nama_seri):
-    """'... KPOP - CORTIS SERIES' -> 'CORTIS'"""
+    """'... KPOP - CORTIS SERIES' -> 'CORTIS'
+
+    Kode ini ikut jadi nama berkas foto utama, mis. JB-CORTIS-utama1.png, jadi
+    karakter yang ditolak Windows diganti tanda hubung — tanpa itu seri seperti
+    "SANRIO|HELLOKITTY" menggagalkan penyalinan dengan WinError 123. Yang
+    diganti hanya karakter terlarang itu: menyentuh yang lain akan mengubah nama
+    foto yang sudah telanjur terunggah.
+    """
     ekor = nama_seri.split(' - ')[-1]
-    return re.sub(r'\s*SERIES\s*$', '', ekor, flags=re.I).replace(' ', '').upper()
+    kode = re.sub(r'\s*SERIES\s*$', '', ekor, flags=re.I).replace(' ', '').upper()
+    return re.sub(r'[<>:"/\\|?*]+', '-', kode).strip('-')
 
 
 def nomor_sku(sku):
