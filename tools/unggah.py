@@ -383,12 +383,27 @@ def kirim_r2(inti, cfg, db, temuan, maju, paksa=False):
     return len(berhasil)
 
 
-def _sudah_tersalin(sumber, tujuan):
-    """Benar kalau salinan di foto-upload sudah ada dan tidak lebih tua dari sumbernya."""
+def _sudah_tersalin(inti, sumber, tujuan):
+    """Benar kalau salinan di foto-upload sudah sama dengan sumbernya sekarang.
+
+    Dulu hanya waktu ubah yang dibandingkan, dan itu pernah meloloskan salinan
+    basi: gambar diperbaiki di Drive, tapi berkas lama di foto-upload dianggap
+    masih berlaku lalu ikut terunggah — 1.481 foto di R2 berisi mockup jenis
+    lain padahal sumbernya di Drive sudah benar.
+
+    Karena itu ukurannya ikut dibandingkan. Berkas di atas batas Shopee memang
+    dikecilkan waktu disalin sehingga ukurannya wajar berbeda; untuk yang itu
+    waktu ubah tetap satu-satunya penanda yang ada.
+    """
     try:
         if not os.path.exists(tujuan) or os.path.getsize(tujuan) == 0:
             return False
-        return os.path.getmtime(tujuan) >= os.path.getmtime(sumber) - 2
+        if os.path.getmtime(tujuan) < os.path.getmtime(sumber) - 2:
+            return False
+        n_sumber = os.path.getsize(sumber)
+        if n_sumber <= inti.BATAS_FOTO:
+            return os.path.getsize(tujuan) == n_sumber
+        return True
     except OSError:
         return False
 
@@ -448,7 +463,7 @@ def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
             os.makedirs(tujuan, exist_ok=True)
             akhir = os.path.join(tujuan, t['nama_tujuan'])
             t['file_lokal'] = akhir
-            if not paksa and _sudah_tersalin(t['sumber'], akhir):
+            if not paksa and _sudah_tersalin(inti, t['sumber'], akhir):
                 t['ukuran'] = os.path.getsize(akhir)
                 with kunci:
                     hitung['lewat'] += 1

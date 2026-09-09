@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """Cari foto yang isinya jenis produk lain daripada yang disebut namanya.
 
-Latar belakangnya: pernah ada 1.481 foto varian bernama JB-xxxxxxx tapi isinya
-mockup PIN AKRILIK. Nama berkasnya benar, jadi tools tidak bisa menyadarinya —
-foto itu disalin apa adanya, dan yang salah baru ketahuan setelah listing-nya
-tayang di Shopee.
+Latar belakangnya: pernah ada 1.480 foto varian bernama JB-xxxxxxx tapi isinya
+mockup PIN AKRILIK, dan itu baru ketahuan setelah listing-nya tayang di Shopee.
+Gambar di Drive ternyata sudah benar — yang tertinggal salinan di R2, karena
+salinan setempat di foto-upload/ dianggap masih berlaku lalu ikut terunggah.
 
 Cara mengenalinya: tiap jenis produk memakai mockup dengan pita atas berwarna
 khas. Warna acuannya tidak ditulis di sini melainkan dihitung dari datanya
@@ -15,13 +15,17 @@ Yang diperiksa hanya foto varian, yang bentuknya seragam. Foto sampul
 (…-utama1/2/3) sengaja dilewati: isinya macam-macam, ada foto produk di atas
 sepatu, jadi warnanya memang wajar berbeda dan tidak bisa dinilai begini.
 """
-import csv, io, os, statistics, threading, urllib.request
+import csv, io, os, statistics, threading, time, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 # PNG tidak berselang-seling: baris paling atas tersimpan paling depan, jadi
 # potongan awal berkas sudah cukup untuk membaca pitanya. Ini yang membuat
 # memeriksa puluhan ribu foto memakan menit, bukan jam.
 POTONG = 48 * 1024
+# Alamat foto dilayani lewat CDN Cloudflare yang menyimpan salinan di tepi
+# jaringan. Tanpa penanda unik, yang terbaca bisa salinan lama, bukan isi bucket
+# yang sebenarnya — dan pemeriksaan ini jadi menuduh berkas yang sudah benar.
+PENANDA = 'cek{}'.format(int(time.time()))
 UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
 SERENTAK = 24
 BATAS_COCOK = 12        # jarak warna maksimal supaya disebut cocok ke jenis lain
@@ -85,8 +89,10 @@ def periksa(inti, cfg, cetak=print, lapor=None, toko=None):
     def satu(t):
         jenis, nama, url = t
         try:
-            minta = urllib.request.Request(url, headers={
-                'User-Agent': UA, 'Range': 'bytes=0-{}'.format(POTONG - 1)})
+            minta = urllib.request.Request(
+                url + ('&' if '?' in url else '?') + 'v=' + PENANDA,
+                headers={'User-Agent': UA,
+                         'Range': 'bytes=0-{}'.format(POTONG - 1)})
             data = urllib.request.urlopen(minta, timeout=30).read()
             warna = _warna_pita(data)
             with kunci:
@@ -146,10 +152,16 @@ def _laporkan(cetak, salah):
         kunci = (s['jenis'], s['isinya'], folder_produk(s['nomor']))
         per_folder.setdefault(kunci, []).append(s['sku'])
     cetak('')
-    cetak('[gambar] folder yang perlu diperbaiki di Google Drive:')
+    cetak('[gambar] folder yang isinya di R2 tidak cocok:')
     urut = sorted(per_folder.items(), key=lambda x: (x[0][0], x[0][2]))
     for (jenis, isinya, folder), daftar in urut:
         cetak('   {:<12} {:<22} {:>3} foto berisi desain {}'.format(
             jenis, folder, len(daftar), isinya))
-    cetak('   Perbaiki gambarnya di Drive, lalu proses ulang foldernya dengan')
-    cetak('   centang "salin ulang" supaya berkas lama benar-benar tertimpa.')
+    cetak('')
+    cetak('   Cek dulu gambarnya di Drive. Sejauh ini yang ditemui, gambar di Drive')
+    cetak('   sudah benar dan yang tertinggal justru salinan di R2 — cukup proses')
+    cetak('   ulang foldernya dengan centang "salin & unggah ulang".')
+    cetak('   Sesudah itu alamat fotonya masih bisa menampilkan gambar lama sebentar,')
+    cetak('   karena Cloudflare menyimpan salinan di tepi jaringan. Kosongkan')
+    cetak('   cache-nya di dasbor Cloudflare (Caching -> Purge) supaya Shopee ikut')
+    cetak('   melihat yang baru.')

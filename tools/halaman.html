@@ -416,16 +416,20 @@ tr.rinci li{margin:2px 0}
         <span class="kecil redup">membaca isi tiap foto varian di R2, sekitar 2 menit</span>
       </div>
       <div class="arti">
-        Nama berkas yang benar tidak menjamin isinya benar: pernah ada 1.481 foto
-        bernama <code>JB-…</code> yang isinya mockup PIN AKRILIK. Tools menyalin foto
-        apa adanya, jadi hal itu baru ketahuan setelah listing-nya tayang.
+        Nama berkas yang benar tidak menjamin isinya benar: pernah ada 1.480 foto
+        bernama <code>JB-…</code> yang isinya mockup PIN AKRILIK, padahal gambarnya
+        di Drive sudah benar — yang tertinggal salinannya di R2.
         <br><br>Pemeriksaan ini membandingkan warna pita atas tiap mockup dengan
         warna khas jenisnya, lalu menyebut folder Drive mana yang perlu diperbaiki.
         Foto sampul (<code>…-utama1/2/3</code>) <b>tidak</b> ikut diperiksa — isinya
         macam-macam, ada foto produk di atas sepatu, jadi harus dilihat sendiri.
-        <br><br>Sesudah gambarnya diperbaiki di Drive, proses ulang foldernya dengan
-        mencentang <b>salin & unggah ulang</b>, supaya berkas lama benar-benar
-        tertimpa — tanpa itu foto yang namanya sudah ada di R2 akan dilewati.
+        <br><br>Perbaikannya: proses ulang folder yang disebut, dengan mencentang
+        <b>salin &amp; unggah ulang</b> — tanpa itu foto yang namanya sudah ada di R2
+        akan dilewati.
+        <br><br>Sesudah diunggah ulang, alamat fotonya masih bisa menampilkan gambar
+        lama sebentar, karena Cloudflare menyimpan salinan di tepi jaringan. Kosongkan
+        lewat dasbor Cloudflare → <b>Caching → Purge Cache</b> supaya Shopee ikut
+        melihat yang baru.
       </div>
     </div>
   </div>
