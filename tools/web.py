@@ -630,12 +630,16 @@ class Penangan(BaseHTTPRequestHandler):
                 # 'path' tetap diterima supaya tombol folder tunggal tidak berubah
                 daftar = badan.get('paths') or [badan['path']]
                 push = bool(badan.get('push', True))
+                # paksa dipakai sesudah gambar di Drive diperbaiki: tanpa ini
+                # berkas lama dilewati karena namanya sudah ada di R2
+                paksa = bool(badan.get('paksa'))
 
                 def lapor(tahap, n, total):
                     SIBUK.update(tahap=tahap, n=n, total=total)
 
                 def kerja():
-                    modul_unggah.proses_banyak(inti, cfg, daftar, push=push, lapor=lapor)
+                    modul_unggah.proses_banyak(inti, cfg, daftar, push=push,
+                                               lapor=lapor, paksa=paksa)
                     letak = {f['path']: (j['jenis'], f) for j in pohon(cfg) for f in j['folder']}
                     for p in daftar:
                         SINGGAHAN.pop(p, None)
@@ -751,6 +755,12 @@ class Penangan(BaseHTTPRequestHandler):
                     SINGGAHAN.clear()
                     simpan_cache()
                 return self._kirim(hasil)
+            if self.path == '/api/cek_gambar':
+                import cek_gambar
+                def lapor(tahap, n, total):
+                    SIBUK.update(tahap=tahap, n=n, total=total)
+                return self._kirim({'mulai': di_latar(
+                    'cek gambar', lambda: cek_gambar.periksa(inti, cfg, lapor=lapor))})
             if self.path == '/api/pindai':
                 def lapor(tahap, n, total):
                     SIBUK.update(tahap=tahap, n=n, total=total)

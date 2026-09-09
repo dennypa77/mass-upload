@@ -408,6 +408,27 @@ tr.rinci li{margin:2px 0}
 
 <!-- ------------------------------------------------------------ KESIAPAN -->
 <section class="lembar" id="lembar-siap">
+  <div class="kartu" style="margin-bottom:14px">
+    <h2>Cek gambar tertukar</h2>
+    <div class="isi">
+      <div class="baris">
+        <button onclick="cekGambar()">Periksa isi gambar</button>
+        <span class="kecil redup">membaca isi tiap foto varian di R2, sekitar 2 menit</span>
+      </div>
+      <div class="arti">
+        Nama berkas yang benar tidak menjamin isinya benar: pernah ada 1.481 foto
+        bernama <code>JB-…</code> yang isinya mockup PIN AKRILIK. Tools menyalin foto
+        apa adanya, jadi hal itu baru ketahuan setelah listing-nya tayang.
+        <br><br>Pemeriksaan ini membandingkan warna pita atas tiap mockup dengan
+        warna khas jenisnya, lalu menyebut folder Drive mana yang perlu diperbaiki.
+        Foto sampul (<code>…-utama1/2/3</code>) <b>tidak</b> ikut diperiksa — isinya
+        macam-macam, ada foto produk di atas sepatu, jadi harus dilihat sendiri.
+        <br><br>Sesudah gambarnya diperbaiki di Drive, proses ulang foldernya dengan
+        mencentang <b>salin & unggah ulang</b>, supaya berkas lama benar-benar
+        tertimpa — tanpa itu foto yang namanya sudah ada di R2 akan dilewati.
+      </div>
+    </div>
+  </div>
   <div class="kartu">
     <h2>2. Cek kesiapan</h2>
     <div class="isi">
@@ -533,6 +554,8 @@ function gambarBilah(){
        <div class="baris" style="margin-top:10px">
          <label class="centang kecil"><input type="checkbox" id="pushBanyak" checked>
            upload setelah disalin</label>
+         <label class="centang kecil" title="Untuk foto yang gambarnya baru diperbaiki di Drive"><input type="checkbox" id="paksaBanyak">
+           salin &amp; unggah ulang</label>
        </div>
        <div class="baris" style="margin-top:8px">
          <button class="utama" onclick="prosesBanyak()">Proses ${n} folder dicentang</button>
@@ -1171,6 +1194,13 @@ function urutkanFolder(daftar){
   return salinan;
 }
 
+function cekGambar(){
+  api('/api/cek_gambar',{}).then(r=>{
+    if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
+    else alert('Pemeriksaan berjalan — hasilnya muncul di log bawah.');
+  });
+}
+
 function scanSemua(){
   if(!confirm('Hitung status seluruh folder produk sekarang?' + String.fromCharCode(10,10)
     +'Biasanya satu sampai beberapa menit, tergantung berapa folder yang isinya '
@@ -1234,7 +1264,9 @@ function pilihFolder(tr){
     </div>
     <div class="baris" style="margin-top:8px">
       <label class="centang kecil"><input type="checkbox" id="push" checked>
-        upload ke GitHub setelah disalin</label>
+        upload setelah disalin</label>
+      <label class="centang kecil" title="Untuk foto yang gambarnya baru diperbaiki di Drive"><input type="checkbox" id="paksa">
+        salin &amp; unggah ulang</label>
       <button class="utama" onclick="proses()">Proses folder ini</button>
     </div>
     <div class="arti"><b>Deteksi isi</b> hanya membaca — menampilkan foto apa saja yang
@@ -1307,7 +1339,8 @@ function prosesBanyak(){
   if(n>20)pesan+=br+br+'Ini pekerjaan panjang — kira-kira '+n+' folder x beberapa '
     +'menit. Jendela boleh ditinggal, prosesnya jalan di server.';
   if(!confirm(pesan))return;
-  api('/api/unggah',{paths:daftar.map(f=>f.path),push:push}).then(r=>{
+  api('/api/unggah',{paths:daftar.map(f=>f.path),push:push,
+                     paksa:$('#paksaBanyak').checked}).then(r=>{
     if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
   });
 }
@@ -1318,7 +1351,7 @@ function proses(){
   if(!confirm(`Proses folder:\n${pilih.path}\n\n`+
      (push?'Foto akan disalin, lalu di-commit dan di-push ke GitHub.':
            'Foto hanya disalin, tanpa upload.')))return;
-  api('/api/unggah',{path:pilih.path,push:push}).then(r=>{
+  api('/api/unggah',{path:pilih.path,push:push,paksa:$('#paksa').checked}).then(r=>{
     if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
   });
 }
