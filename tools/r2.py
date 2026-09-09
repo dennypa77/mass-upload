@@ -107,9 +107,15 @@ class R2:
     def hapus(self, kunci):
         self._minta('DELETE', '/{}/{}'.format(self.bucket, kunci))
 
-    def daftar(self, awalan=''):
-        """Semua kunci objek di bucket, sudah termasuk halaman berikutnya."""
-        hasil, lanjut = [], None
+    def daftar(self, awalan='', dengan_ukuran=False):
+        """Semua kunci objek di bucket, sudah termasuk halaman berikutnya.
+
+        dengan_ukuran=True mengembalikan {kunci: ukuran}. Ukuran ikut dikirim
+        dalam jawaban yang sama, jadi mengambilnya tidak menambah permintaan —
+        dan itu cukup untuk tahu objek di bucket masih sama dengan sumbernya
+        tanpa perlu mengunduh apa pun.
+        """
+        hasil, lanjut = ({} if dengan_ukuran else []), None
         while True:
             tanya = {'list-type': '2', 'max-keys': '1000'}
             if awalan:
@@ -121,7 +127,11 @@ class R2:
             ruang = akar.tag.split('}')[0] + '}' if '}' in akar.tag else ''
             for anak in akar.findall('{}Contents'.format(ruang)):
                 kunci = anak.findtext('{}Key'.format(ruang))
-                if kunci:
+                if not kunci:
+                    continue
+                if dengan_ukuran:
+                    hasil[kunci] = int(anak.findtext('{}Size'.format(ruang)) or 0)
+                else:
                     hasil.append(kunci)
             if akar.findtext('{}IsTruncated'.format(ruang)) == 'true':
                 lanjut = akar.findtext('{}NextContinuationToken'.format(ruang))

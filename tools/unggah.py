@@ -152,7 +152,21 @@ def deteksi(inti, cfg, folder):
     except SystemExit:
         pass
 
+    # Jenis produk ditentukan dari awalan nama berkas, bukan dari letak foldernya.
+    # Itu jadi masalah ketika pohon PIN AKRILIK berisi berkas bernama JB-xxxxxxx:
+    # keduanya menuju alamat yang sama di R2, dan yang diproses belakangan
+    # menimpa yang duluan — foto jibbitz tergantikan desain pin akrilik tanpa
+    # ada tanda apa pun. Karena itu berkas yang awalannya tidak cocok dengan
+    # pohon tempatnya berada ditolak, bukan diproses.
+    jenis_pohon = None
+    for nama_jenis in cfg['jenis']:
+        akar = os.path.normpath(inti.dir_jenis(cfg, nama_jenis))
+        if os.path.normpath(folder).lower().startswith(akar.lower()):
+            jenis_pohon = nama_jenis
+            break
+
     temuan, tanpa_seri, tak_dikenal, survei = [], [], [], []
+    salah_pohon = []
     for dirpath, _, berkas in os.walk(folder):
         gambar = [f for f in sorted(berkas) if f.lower().endswith(inti.EKSTENSI)]
         if not gambar:
@@ -192,6 +206,9 @@ def deteksi(inti, cfg, folder):
             else:
                 tak_dikenal.append(asal)
                 continue
+            if jenis_pohon and jenis != jenis_pohon:
+                salah_pohon.append((asal, jenis))
+                continue
             slug = cfg['jenis'][jenis]['slug']
             temuan.append({
                 'toko': toko, 'nama_toko': nama_toko.get(toko, toko), 'jenis': jenis,
@@ -199,6 +216,22 @@ def deteksi(inti, cfg, folder):
                 'nama_tujuan': nama, 'slug': slug,
                 'path_repo': 'foto-upload/{}/{}/{}'.format(toko, slug, nama),
             })
+    if salah_pohon:
+        lain = {}
+        for asal, jenis in salah_pohon:
+            lain.setdefault(jenis, []).append(asal)
+        print('   ! {} berkas dilewati: namanya milik jenis lain, padahal folder ini '
+              '{}'.format(len(salah_pohon), jenis_pohon))
+        for jenis, daftar in sorted(lain.items()):
+            print('       {} berkas berawalan {} ({}), contoh: {}'.format(
+                len(daftar), cfg['jenis'][jenis]['prefix_sku'], jenis,
+                os.path.basename(daftar[0])))
+        print('       Kalau ikut diproses, berkas ini menimpa foto {} yang benar, '
+              'karena tujuannya sama.'.format(', '.join(sorted(lain))))
+        print('       Perbaiki namanya di Drive, atau pindahkan ke pohon yang sesuai.')
+        tak_dikenal.extend(
+            '{} (nama berkas milik {}, bukan {})'.format(asal, jenis, jenis_pohon)
+            for asal, jenis in salah_pohon[:20])
     return temuan, tanpa_seri, tak_dikenal, survei
 
 

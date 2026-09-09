@@ -412,11 +412,17 @@ tr.rinci li{margin:2px 0}
     <h2>Cek gambar tertukar</h2>
     <div class="isi">
       <div class="baris">
+        <button onclick="cekUkuran()">Bandingkan dengan Drive</button>
         <button onclick="cekGambar()">Periksa isi gambar</button>
-        <span class="kecil redup">membaca isi tiap foto varian di R2, sekitar 2 menit</span>
+        <span class="kecil redup">hasilnya muncul di log bawah</span>
       </div>
       <div class="arti">
-        Nama berkas yang benar tidak menjamin isinya benar: pernah ada 1.480 foto
+        <b>Bandingkan dengan Drive</b> memeriksa ukuran tiap foto di R2 terhadap
+        berkasnya di Drive. Kalau ukurannya beda, yang di R2 pasti bukan berkas yang
+        sekarang ada di Drive. Ini yang paling pasti, mencakup foto sampul juga, dan
+        tidak mengunduh satu foto pun. Foto di atas 2 MB dilewati karena memang
+        dikecilkan waktu disalin.
+        <br><br>Nama berkas yang benar tidak menjamin isinya benar: pernah ada 1.480 foto
         bernama <code>JB-…</code> yang isinya mockup PIN AKRILIK, padahal gambarnya
         di Drive sudah benar — yang tertinggal salinannya di R2.
         <br><br>Pemeriksaan ini membandingkan warna pita atas tiap mockup dengan
@@ -1196,6 +1202,13 @@ function urutkanFolder(daftar){
   else if(cara==='za')salinan.sort((a,b)=>b.nama.localeCompare(a.nama));
   else salinan.sort((a,b)=>(b.siap||0)-(a.siap||0)||a.nama.localeCompare(b.nama));
   return salinan;
+}
+
+function cekUkuran(){
+  api('/api/cek_ukuran',{}).then(r=>{
+    if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
+    else alert('Pemeriksaan berjalan — hasilnya muncul di log bawah.');
+  });
 }
 
 function cekGambar(){

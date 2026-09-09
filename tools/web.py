@@ -761,6 +761,12 @@ class Penangan(BaseHTTPRequestHandler):
                     SIBUK.update(tahap=tahap, n=n, total=total)
                 return self._kirim({'mulai': di_latar(
                     'cek gambar', lambda: cek_gambar.periksa(inti, cfg, lapor=lapor))})
+            if self.path == '/api/cek_ukuran':
+                import cek_gambar
+                def lapor(tahap, n, total):
+                    SIBUK.update(tahap=tahap, n=n, total=total)
+                return self._kirim({'mulai': di_latar(
+                    'cek ukuran', lambda: cek_gambar.periksa_ukuran(inti, cfg, lapor=lapor))})
             if self.path == '/api/pindai':
                 def lapor(tahap, n, total):
                     SIBUK.update(tahap=tahap, n=n, total=total)

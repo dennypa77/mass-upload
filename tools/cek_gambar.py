@@ -137,6 +137,88 @@ def periksa(inti, cfg, cetak=print, lapor=None, toko=None):
     return {'diperiksa': len(terbaca), 'salah': salah, 'acuan': acuan}
 
 
+def folder_drive(cfg, inti):
+    """[(jenis, path)] seluruh folder produk di Drive."""
+    import re
+    hasil = []
+    for jenis in cfg['jenis']:
+        akar = inti.dir_jenis(cfg, jenis)
+        if not os.path.isdir(akar):
+            continue
+        for nama in sorted(os.listdir(akar)):
+            p = os.path.join(akar, nama)
+            if re.match(r'^PRODUK\s+\d+\s*-\s*\d+$', nama.strip(), re.I) and os.path.isdir(p):
+                hasil.append((jenis, p))
+    return hasil
+
+
+def periksa_ukuran(inti, cfg, cetak=print, lapor=None):
+    """Bandingkan ukuran tiap foto di Drive dengan objeknya di R2.
+
+    Cara yang lebih pasti daripada menebak dari warna, dan berlaku untuk semua
+    foto termasuk sampul: kalau ukurannya beda, yang di R2 pasti bukan berkas
+    yang sekarang ada di Drive. Ukuran objek ikut terkirim dalam daftar bucket,
+    jadi ini tidak mengunduh satu foto pun.
+
+    Foto di atas batas Shopee dikecilkan waktu disalin sehingga ukurannya
+    memang berubah — yang itu dilewati, tidak bisa dinilai begini.
+    """
+    import r2 as modul_r2
+    import unggah as modul_unggah
+    klien = modul_r2.dari_config(cfg)
+    if not klien:
+        cetak('[ukuran] mode penyimpanan bukan r2')
+        return {'beda': [], 'hilang': []}
+
+    cetak('[ukuran] membaca daftar objek beserta ukurannya …')
+    di_bucket = klien.daftar('foto-upload/', dengan_ukuran=True)
+    cetak('[ukuran] {} objek di bucket'.format(len(di_bucket)))
+
+    folder = folder_drive(cfg, inti)
+    cetak('[ukuran] membandingkan dengan {} folder produk di Drive …'.format(len(folder)))
+    beda, hilang, dilewati, sama = [], [], 0, 0
+    for i, (jenis, path) in enumerate(folder, 1):
+        try:
+            temuan = modul_unggah.deteksi(inti, cfg, path)[0]
+        except SystemExit:
+            continue
+        for t in temuan:
+            try:
+                n_sumber = os.path.getsize(t['sumber'])
+            except OSError:
+                continue
+            if n_sumber > inti.BATAS_FOTO:
+                dilewati += 1               # dikecilkan waktu disalin
+                continue
+            n_bucket = di_bucket.get(t['path_repo'])
+            if n_bucket is None:
+                hilang.append(t['path_repo'])
+            elif n_bucket != n_sumber:
+                beda.append({'path': t['path_repo'], 'folder': os.path.basename(path),
+                             'jenis': jenis, 'drive': n_sumber, 'r2': n_bucket})
+            else:
+                sama += 1
+        if lapor:
+            lapor('ukuran', i, len(folder))
+        if i % 100 == 0:
+            cetak('      {}/{} folder'.format(i, len(folder)))
+
+    cetak('[ukuran] {} cocok, {} beda ukuran, {} belum ada di R2, {} dilewati '
+          '(dikecilkan)'.format(sama, len(beda), len(hilang), dilewati))
+    if beda:
+        per_folder = {}
+        for b in beda:
+            per_folder.setdefault((b['jenis'], b['folder']), []).append(b)
+        cetak('')
+        cetak('[ukuran] folder yang di R2 masih tertinggal:')
+        for (jenis, nama), daftar in sorted(per_folder.items()):
+            cetak('   {:<12} {:<24} {} foto'.format(jenis, nama, len(daftar)))
+        cetak('   Proses ulang folder itu dengan centang "salin & unggah ulang".')
+    else:
+        cetak('[ukuran] semua foto di R2 sama dengan sumbernya di Drive')
+    return {'beda': beda, 'hilang': hilang, 'sama': sama}
+
+
 def folder_produk(nomor, per=50):
     """1187 -> 'PRODUK 01151 - 01200', mengikuti penamaan folder di Drive."""
     awal = (nomor - 1) // per * per + 1

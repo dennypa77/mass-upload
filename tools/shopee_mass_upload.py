@@ -1323,7 +1323,7 @@ def perintah_build(cfg, data, sub=None):
 
 def main():
     p = argparse.ArgumentParser(description='Pembuat file Shopee Mass Upload')
-    p.add_argument('perintah', choices=['impor', 'sinkron', 'migrasi-r2', 'perbarui', 'template', 'pasang-hook', 'deteksi', 'unggah', 'foto', 'url', 'cek', 'cek-gambar', 'build', 'semua'])
+    p.add_argument('perintah', choices=['impor', 'sinkron', 'migrasi-r2', 'perbarui', 'template', 'pasang-hook', 'deteksi', 'unggah', 'foto', 'url', 'cek', 'cek-gambar', 'cek-ukuran', 'build', 'semua'])
     p.add_argument('sumber', nargs='?', help='untuk "impor": berkas ekspor SKU; untuk "unggah": folder produk')
     p.add_argument('--tanpa-push', action='store_true', help='unggah: siapkan saja, jangan push ke GitHub')
     p.add_argument('--pasang', action='store_true', help='perbarui: langsung pasang, jangan cek saja')
@@ -1399,6 +1399,11 @@ def main():
             sys.exit('Contoh: python tools/shopee_mass_upload.py deteksi "G:/My Drive/JIBBITZ/..."')
         import unggah as modul_unggah
         modul_unggah.lapor_deteksi(sys.modules[__name__], cfg, a.sumber)
+        return
+
+    if a.perintah == 'cek-ukuran':
+        import cek_gambar
+        cek_gambar.periksa_ukuran(sys.modules[__name__], cfg)
         return
 
     if a.perintah == 'cek-gambar':
