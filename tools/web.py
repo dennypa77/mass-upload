@@ -108,6 +108,7 @@ def pohon(cfg):
     """
     from bisect import bisect_left, bisect_right
     siap = inti.indeks_foto_siap()
+    tahap = inti.baca_tahap()
     hasil = []
     for jenis, j in cfg['jenis'].items():
         akar = inti.dir_jenis(cfg, jenis)
@@ -119,9 +120,13 @@ def pohon(cfg):
                     nomor = siap.get(jenis.upper(), [])
                     n_siap = (bisect_right(nomor, rentang[1])
                               - bisect_left(nomor, rentang[0])) if nomor else 0
+                    t = tahap.get(inti.kunci_tahap(jenis, rentang[0], rentang[1]))
                     anak.append({'nama': nama, 'path': os.path.join(akar, nama),
                                  'dari': rentang[0], 'sampai': rentang[1],
-                                 'siap': n_siap})
+                                 'siap': n_siap,
+                                 'tahap': (t or {}).get('tahap', 'belum'),
+                                 'tahap_waktu': (t or {}).get('waktu', ''),
+                                 'tahap_catatan': (t or {}).get('catatan', '')})
         hasil.append({'jenis': jenis, 'prefix': j['prefix_sku'], 'akar': akar,
                       'khusus': bool((j.get('path_drive') or '').strip()),
                       'ada': os.path.isdir(akar), 'folder': anak})
@@ -487,7 +492,19 @@ def ringkas_status(cfg):
         for jenis, f in semua_folder
         if SINGGAHAN.get(f['path'], {}).get('keadaan') == 'baru']
 
+    # Tahap manual: satu-satunya angka di sini yang berasal dari pernyataan
+    # orangnya, bukan dari isi Drive atau Google Sheet.
+    per_tahap = {t: 0 for t in inti.TAHAP}
+    tahap_per_jenis = {}
+    for jenis, f in semua_folder:
+        t = f.get('tahap') or 'belum'
+        per_tahap[t] = per_tahap.get(t, 0) + 1
+        tahap_per_jenis.setdefault(jenis, {}).setdefault(t, 0)
+        tahap_per_jenis[jenis][t] += 1
+
     return {'per_jenis': per_jenis, 'foto_terunggah': jumlah_foto,
+            'tahap': {'per_tahap': per_tahap, 'per_jenis': tahap_per_jenis,
+                      'total': len(semua_folder), 'arti': inti.TAHAP_ARTI},
             'siap_dikerjakan': seri_belum[:40],
             'jumlah_siap_dikerjakan': len(seri_belum),
             'folder': {'total': len(semua_folder), 'discan': discan,
@@ -663,6 +680,19 @@ class Penangan(BaseHTTPRequestHandler):
                             print('[build] tidak ada SKU pada folder yang dipilih')
                             return
                         inti.perintah_build(cfg, data, sub='pilihan' if lingkup else None)
+                        # Sengaja tidak menandai apa pun sendiri: berkas Excel
+                        # jadi bukan berarti Shopee menerimanya. Yang dilakukan
+                        # cuma menyebutkan folder mana saja yang barusan ikut,
+                        # supaya tinggal ditandai kalau nanti benar diterima.
+                        if lingkup:
+                            print('')
+                            print('[build] {} folder ikut dalam berkas ini:'.format(
+                                len(lingkup)))
+                            for f in lingkup:
+                                print('   {:<12} {:05d} - {:05d}'.format(
+                                    f['jenis'], int(f['dari']), int(f['sampai'])))
+                            print('   Kalau nanti Shopee menerimanya, tandai folder itu')
+                            print('   "Sudah di Shopee" di tab 1 supaya tidak dikerjakan lagi.')
                         return
                     if nama == 'cek':
                         inti.perintah_cek(cfg, inti.baca_sku())
@@ -767,6 +797,18 @@ class Penangan(BaseHTTPRequestHandler):
                     SIBUK.update(tahap=tahap, n=n, total=total)
                 return self._kirim({'mulai': di_latar(
                     'cek ukuran', lambda: cek_gambar.periksa_ukuran(inti, cfg, lapor=lapor))})
+            if self.path == '/api/tahap':
+                # Diisi orang, tidak pernah otomatis: berhasil membuat berkas
+                # Excel bukan jaminan Shopee menerimanya.
+                folder = badan.get('folder') or []
+                # nama komputer dicatat supaya kelihatan siapa yang menandai
+                # ketika dua orang bekerja pada daftar yang sama
+                oleh = (badan.get('oleh') or '').strip() or os.environ.get(
+                    'COMPUTERNAME') or ''
+                n = inti.setel_tahap(folder, badan['tahap'],
+                                     (badan.get('catatan') or '').strip(), oleh)
+                catat('[tahap] {} folder ditandai "{}"'.format(n, badan['tahap']))
+                return self._kirim({'ok': True, 'jumlah': n})
             if self.path == '/api/pindai':
                 def lapor(tahap, n, total):
                     SIBUK.update(tahap=tahap, n=n, total=total)

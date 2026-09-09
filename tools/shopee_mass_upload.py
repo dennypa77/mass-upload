@@ -1043,6 +1043,110 @@ def peta_url_r2(cfg, _ingatan={}):
 
 MANIFEST_R2 = os.path.join(AKAR, 'data', 'foto_r2.csv')
 
+# --------------------------------------------------------------------- tahap manual
+# Sampai mana sebuah folder sudah dikerjakan menurut orangnya sendiri. Sengaja
+# tidak pernah diisi otomatis: berhasil membuat berkas Excel bukan berarti
+# Shopee menerimanya, jadi hanya orang yang mengerjakan yang boleh menyatakan
+# folder itu selesai. Yang otomatis cuma status foto (lihat status_folder).
+TAHAP = ['belum', 'diekspor', 'diupload', 'ditolak']
+TAHAP_ARTI = {
+    'belum': 'belum dikerjakan',
+    'diekspor': 'sudah masuk berkas Excel',
+    'diupload': 'sudah diterima Shopee',
+    'ditolak': 'ditolak Shopee, perlu diulang',
+}
+BERKAS_TAHAP = os.path.join(AKAR, 'data', 'tahap_folder.csv')
+KOLOM_TAHAP = ['jenis', 'dari', 'sampai', 'tahap', 'catatan', 'waktu', 'oleh']
+
+
+def kunci_tahap(jenis, dari, sampai):
+    """Penanda folder yang sama di semua komputer.
+
+    Sengaja memakai rentang nomor SKU, bukan path folder: huruf drive dan letak
+    Google Drive berbeda di tiap komputer, sedangkan rentangnya sama.
+    """
+    return '{}|{}|{}'.format(str(jenis).upper(), int(dari), int(sampai))
+
+
+def baca_tahap():
+    """{kunci: baris} tahap manual tiap folder."""
+    hasil = {}
+    if not os.path.exists(BERKAS_TAHAP):
+        return hasil
+    try:
+        with open(BERKAS_TAHAP, encoding='utf-8-sig', newline='') as f:
+            for r in csv.DictReader(f):
+                if not r.get('jenis'):
+                    continue
+                try:
+                    k = kunci_tahap(r['jenis'], r['dari'], r['sampai'])
+                except (TypeError, ValueError):
+                    continue
+                hasil[k] = {c: (r.get(c) or '') for c in KOLOM_TAHAP}
+    except OSError:
+        pass
+    return hasil
+
+
+def tulis_tahap(semua):
+    """Simpan seluruh tahap. Berkasnya ikut git supaya komputer lain ikut tahu."""
+    os.makedirs(os.path.dirname(BERKAS_TAHAP), exist_ok=True)
+    with open(BERKAS_TAHAP, 'w', encoding='utf-8-sig', newline='') as f:
+        w = csv.DictWriter(f, fieldnames=KOLOM_TAHAP)
+        w.writeheader()
+        for k in sorted(semua, key=lambda x: (x.split('|')[0], int(x.split('|')[1]))):
+            w.writerow({c: semua[k].get(c, '') for c in KOLOM_TAHAP})
+    return len(semua)
+
+
+def gabung_tahap(berkas_lain):
+    """Gabungkan penandaan dari berkas lain ke yang sekarang, yang terbaru menang.
+
+    Dipakai waktu memperbarui: komputer ini mungkin menandai folder A sementara
+    komputer lain menandai folder B. Kalau salah satu berkas sekadar menimpa
+    yang lain, salah satu pekerjaan itu hilang dan folder yang sudah selesai
+    bisa dikerjakan dua kali — persis yang mau dicegah.
+    """
+    if not os.path.exists(berkas_lain):
+        return 0
+    sekarang = baca_tahap()
+    simpan = BERKAS_TAHAP
+    globals()['BERKAS_TAHAP'] = berkas_lain
+    try:
+        lain = baca_tahap()
+    finally:
+        globals()['BERKAS_TAHAP'] = simpan
+
+    baru = 0
+    for k, b in lain.items():
+        ada = sekarang.get(k)
+        if not ada or (b.get('waktu') or '') > (ada.get('waktu') or ''):
+            sekarang[k] = b
+            baru += 1
+    if baru:
+        tulis_tahap(sekarang)
+    return baru
+
+
+def setel_tahap(folder, tahap, catatan='', oleh=''):
+    """Tandai beberapa folder sekaligus. folder = [{jenis, dari, sampai}]."""
+    if tahap not in TAHAP:
+        raise ValueError('tahap tidak dikenal: {}'.format(tahap))
+    semua = baca_tahap()
+    waktu = time.strftime('%Y-%m-%d %H:%M')
+    n = 0
+    for f in folder:
+        k = kunci_tahap(f['jenis'], f['dari'], f['sampai'])
+        if tahap == 'belum':
+            semua.pop(k, None)
+        else:
+            semua[k] = {'jenis': str(f['jenis']).upper(), 'dari': int(f['dari']),
+                        'sampai': int(f['sampai']), 'tahap': tahap,
+                        'catatan': catatan, 'waktu': waktu, 'oleh': oleh}
+        n += 1
+    tulis_tahap(semua)
+    return n
+
 
 def tulis_manifest_r2(cfg, kunci_url):
     """Simpan daftar "kunci -> URL" ke berkas teks yang ikut git.

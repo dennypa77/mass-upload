@@ -127,6 +127,14 @@ tr.rinci li{margin:2px 0}
             <option value="tanpatoko">Folder toko tidak dikenali</option>
             <option value="kosong">Belum ada foto</option>
           </select>
+          <span class="kecil redup">tahap:</span>
+          <select id="saringTahap" class="pilihan" onchange="saring()">
+            <option value="">Semua</option>
+            <option value="belum">Belum dikerjakan</option>
+            <option value="diekspor">Sudah diekspor</option>
+            <option value="diupload">Sudah di Shopee</option>
+            <option value="ditolak">Ditolak Shopee</option>
+          </select>
           <span class="kecil redup">urut:</span>
           <select id="urutan" class="pilihan" onchange="muatPohon()">
             <option value="siap">Foto siap dulu</option>
@@ -148,7 +156,8 @@ tr.rinci li{margin:2px 0}
             <th title="Jumlah berkas gambar (PNG/JPG) di dalam folder ini, seluruh toko dijumlahkan">Foto di sumber</th>
             <th title="Berapa SKU pada rentang nomor folder ini yang sudah terdaftar di data/sku.csv">SKU terdaftar</th>
             <th title="Berapa foto folder ini yang sudah benar-benar ada di GitHub, dari yang tercatat di database">Sudah di GitHub</th>
-            <th title="Kesimpulan: apa yang masih kurang sebelum folder ini bisa jadi listing">Status</th>
+            <th title="Kesimpulan: apa yang masih kurang sebelum folder ini bisa jadi listing">Status foto</th>
+            <th title="Diisi sendiri, tidak pernah otomatis. Menandai sampai mana folder ini sudah dikerjakan sampai Shopee">Tahap</th>
           </tr></thead>
           <tbody></tbody>
         </table>
@@ -167,6 +176,12 @@ tr.rinci li{margin:2px 0}
           <dt><span class="tanda t-baru">foto ada, belum diproses</span></dt><dd>siap diproses — tekan “Proses folder ini”</dd>
           <dt><span class="tanda t-sebagian">sebagian sudah di R2</span></dt><dd>sebagian fotonya sudah terunggah, sisanya belum — proses lagi untuk melanjutkan</dd>
           <dt><span class="tanda t-tanpasku">SKU belum diimpor</span></dt><dd>fotonya ada, tapi SKU-nya tidak ada di sku.csv sehingga belum bisa masuk listing mana pun</dd>
+          <dt><b>Kolom Tahap</b></dt><dd>diisi sendiri lewat tombol di kartu
+            “Folder dicentang”, <b>tidak pernah berubah otomatis</b> — berhasil membuat
+            berkas Excel bukan jaminan Shopee menerimanya, jadi hanya Anda yang boleh
+            menyatakan folder itu selesai. Tersimpan di <code>data/tahap_folder.csv</code>
+            yang ikut ke GitHub, jadi komputer lain melihat tanda yang sama dan tidak
+            mengerjakan folder yang sudah selesai</dd>
           <dt><span class="tanda t-siap">sudah di R2 · siap listing</span></dt><dd><b>folder ini sudah selesai diunggah</b> — tidak perlu diproses lagi. Foto lengkap di Cloudflare R2 dan SKU-nya terdaftar</dd>
         </dl>
       </div>
@@ -571,6 +586,15 @@ function gambarBilah(){
          <button class="utama" onclick="prosesBanyak()">Proses ${n} folder dicentang</button>
          <button onclick="kosongkanPilihan()">Kosongkan</button>
        </div>
+       <div style="border-top:1px solid var(--garis);margin-top:12px;padding-top:10px">
+         <div class="kecil redup" style="margin-bottom:6px">Tandai ${n} folder itu sebagai:</div>
+         <div class="baris">
+           <button onclick="tandai('diekspor')">Sudah diekspor</button>
+           <button onclick="tandai('diupload')">Sudah di Shopee</button>
+           <button onclick="tandai('ditolak')">Ditolak Shopee</button>
+           <button onclick="tandai('belum')">Kosongkan tahap</button>
+         </div>
+       </div>
        <div class="arti">Folder dikerjakan berurutan dari atas ke bawah. Kalau satu
          folder gagal, sisanya tetap dilanjutkan, dan di akhir ada ringkasan folder
          mana yang berhasil. Foto yang sudah pernah disalin tidak disalin ulang,
@@ -645,6 +669,25 @@ function muatDasbor(){
       <div class="kecil redup" style="margin-top:10px">
         ${d.foto_terunggah.toLocaleString('id')} foto sudah ada di Cloudflare R2</div>
     </div></div>`;
+
+    const T=d.tahap;
+    if(T){
+      const tt=k=>T.per_tahap[k]||0;
+      h+=`<div class="kartu" style="margin-top:14px">
+        <h2>Tahap pengerjaan — diisi sendiri</h2><div class="isi">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+          ${kotak('Sudah di Shopee',tt('diupload'),'var(--hijau)','sudah diterima Shopee')}
+          ${kotak('Sudah diekspor',tt('diekspor'),'var(--biru)','masuk berkas Excel, belum dipastikan')}
+          ${kotak('Ditolak Shopee',tt('ditolak'),'var(--merah)','perlu diulang')}
+          ${kotak('Belum ditandai',tt('belum'),'var(--redup)','dari '+T.total+' folder')}
+        </div>
+        <div class="arti" style="margin-top:12px">Angka di kartu ini <b>tidak pernah
+          berubah sendiri</b>. Tandai lewat tombol di tab “1. Folder Produk” setelah
+          benar-benar dicek di Shopee — berhasil membuat berkas Excel bukan jaminan
+          Shopee menerimanya. Tandanya ikut ke GitHub, jadi komputer lain melihat
+          hal yang sama dan tidak mengerjakan folder yang sudah selesai.</div>
+      </div></div>`;
+    }
 
     const F=d.folder||{total:0,discan:0,status:{}};
     const st=k=>F.status[k]||0;
@@ -1133,6 +1176,21 @@ function amati(tr){
   },{rootMargin:'150px'});
   pengamat.observe(tr);
 }
+const TAHAP={belum:['belum dikerjakan','t-kosong'],
+             diekspor:['sudah diekspor','t-sebagian'],
+             diupload:['sudah di Shopee','t-siap'],
+             ditolak:['ditolak Shopee','t-tanpasku']};
+
+function gambarTahap(tr,tahap,waktu){
+  const [teks,kelas]=TAHAP[tahap]||TAHAP.belum;
+  tr.dataset.tahap=tahap;
+  const sel=tr.querySelector('[data-k=tahap]');
+  if(!sel)return;
+  sel.innerHTML=tahap==='belum'
+    ? '<span class="redup kecil">—</span>'
+    : `<span class="tanda ${kelas}" title="${waktu||''}">${teks}</span>`;
+}
+
 function pasangStatus(tr,s){
   tr.dataset.status=JSON.stringify(s);
   tr.querySelector('[data-k=foto]').textContent=s.foto?s.foto+' foto':'—';
@@ -1179,7 +1237,10 @@ function muatPohon(){
           <td class="angka" data-k="foto">…</td>
           <td class="angka" data-k="sku"></td>
           <td class="angka" data-k="git"></td>
-          <td data-k="tanda"></td>`;
+          <td data-k="tanda"></td>
+          <td data-k="tahap"></td>`;
+        r.dataset.tahap=f.tahap||'belum';
+        gambarTahap(r,f.tahap||'belum',f.tahap_waktu||'');
         const kotak=r.querySelector('.centangFolder');
         kotak.checked=dipilih.has(f.path);
         kotak.onclick=e=>{e.stopPropagation();ubahCentang(kotak,r);};
@@ -1231,6 +1292,7 @@ function saring(){
   const q=$('#cari').value.trim().toLowerCase();
   const hanya=$('#hanyaFoto').checked;
   const status=$('#saringStatus').value;
+  const tahap=$('#saringTahap').value;
   let tampak=0, menunggu=0, tersembunyi=0, tanpaFoto=0;
   document.querySelectorAll('tr.jenis').forEach(th=>{
     const buka=th.dataset.buka!=='0';
@@ -1247,6 +1309,7 @@ function saring(){
       if(s&&!s.foto) tanpaFoto++;
       if(lolos&&hanya&&s) lolos=!!s.foto;
       if(lolos&&status&&s) lolos=s.keadaan===status;
+      if(lolos&&tahap) lolos=(anak.dataset.tahap||'belum')===tahap;
       if(lolos&&!s&&(hanya||status)) menunggu++;
       if(!lolos) tersembunyi++;
       // Baris di bawah judul jenis yang sedang ditutup ikut disembunyikan, tapi
@@ -1340,6 +1403,29 @@ function deteksi(){
     $('#detail').innerHTML=h;
   });
 }
+function tandai(tahap){
+  const n=dipilih.size;
+  if(!n)return;
+  const [teks]=TAHAP[tahap]||TAHAP.belum;
+  const br=String.fromCharCode(10);
+  if(!confirm('Tandai '+n+' folder sebagai "'+teks+'"?'+br+br
+     +'Tahap ini diisi sendiri, tidak pernah berubah otomatis — jadi isilah '
+     +'setelah benar-benar dicek di Shopee.'))return;
+  const catatan=tahap==='ditolak'
+    ? (prompt('Alasan ditolak (boleh dikosongkan):')||'') : '';
+  api('/api/tahap',{folder:[...dipilih.values()].map(f=>(
+        {jenis:f.jenis,dari:f.dari,sampai:f.sampai})),tahap:tahap,catatan:catatan})
+    .then(d=>{
+      if(!d.ok){alert('Gagal menyimpan.');return;}
+      // baris yang tampak diperbarui langsung, tanpa memuat ulang seluruh daftar
+      const waktu=new Date().toISOString().slice(0,16).replace('T',' ');
+      document.querySelectorAll('tr.folder').forEach(tr=>{
+        if(dipilih.has(tr.dataset.path))gambarTahap(tr,tahap,waktu);
+      });
+      saring(); muatDasbor();
+    });
+}
+
 function prosesBanyak(){
   const n=dipilih.size;
   if(!n)return;

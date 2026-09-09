@@ -107,9 +107,19 @@ def pasang(inti, cetak=print):
             if not rel.replace('\\', '/').startswith('data/'):
                 continue
             asal = os.path.join(folder, rel.replace('/', os.sep))
-            if os.path.exists(asal):
-                shutil.copy2(asal, os.path.join(inti.AKAR, rel.replace('/', os.sep)))
-                pulih.append(rel)
+            if not os.path.exists(asal):
+                continue
+            # Penandaan tahap digabung, bukan ditimpa: komputer lain mungkin
+            # menandai folder lain, dan menimpa berarti pekerjaannya hilang.
+            if os.path.normpath(rel).lower() == os.path.normpath(
+                    os.path.relpath(inti.BERKAS_TAHAP, inti.AKAR)).lower():
+                n = inti.gabung_tahap(asal)
+                cetak('[perbarui] tahap folder digabung, {} tanda dari komputer '
+                      'ini dipertahankan'.format(n))
+                pulih.append(rel + ' (digabung)')
+                continue
+            shutil.copy2(asal, os.path.join(inti.AKAR, rel.replace('/', os.sep)))
+            pulih.append(rel)
         if pulih:
             cetak('[perbarui] dikembalikan (milik komputer ini): {}'.format(', '.join(pulih)))
 
