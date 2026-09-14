@@ -30,7 +30,22 @@
         "100037": "Indonesia",
         "101219": "Ya"
       },
-      "spec": "Bahan: Akrilik\nKetebalan: 2 mm\nFinishing: Cetak UV, permukaan glossy\nPemasangan: Karet kancing jibbitz, pasang di lubang sandal/clog\nMin. order: 3 pcs (boleh beda desain)"
+      "spec": "Bahan: Akrilik\nKetebalan: 2 mm\nFinishing: Cetak UV, permukaan glossy\nPemasangan: Karet kancing jibbitz, pasang di lubang sandal/clog\nMin. order: 3 pcs (boleh beda desain)",
+      "_pola_foto_utama": "Sampul 1, 2, 3 — pola pertama yang cocok dipakai. {P} = awalan SKU. Pola berawalan nama folder, mis. Sepatu/..., diambil dari subfolder bersama dan dipakai semua toko. Tanpa ini: foto.nama_foto_utama.",
+      "pola_foto_utama": [
+        [
+          "Katalog_{P}-*_sd_{P}-*.png",
+          "foto1.png"
+        ],
+        [
+          "Mockup_{P}-*_sd_{P}-*.png",
+          "foto2.png"
+        ],
+        [
+          "Sepatu/Mockup_{P}-*_sd_{P}-*.png",
+          "foto3.png"
+        ]
+      ]
     },
     "PIN AKRILIK": {
       "prefix_sku": "PA",
@@ -74,19 +89,28 @@
       "nama": "Graphica Key",
       "kode": "GK",
       "folder_foto": "toko1",
-      "profil": "eksklusif"
+      "profil": "eksklusif",
+      "alias": [
+        "Graphicakey"
+      ]
     },
     {
       "nama": "Kaitin.aja",
       "kode": "KTA",
       "folder_foto": "toko2",
-      "profil": "lucu"
+      "profil": "lucu",
+      "alias": [
+        "Kaitin"
+      ]
     },
     {
       "nama": "Hangs on You",
       "kode": "HOY",
       "folder_foto": "toko3",
-      "profil": "fandom"
+      "profil": "fandom",
+      "alias": [
+        "Hangsonyou"
+      ]
     }
   ],
   "profil": {

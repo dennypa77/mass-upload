@@ -302,18 +302,64 @@ def indeks_foto_siap(_ingatan={}):
     return hasil
 
 
-def dir_jenis(cfg, jenis):
-    """Folder sumber di komputer ini untuk satu jenis produk.
+def dirs_jenis(cfg, jenis):
+    """Semua folder sumber satu jenis produk di komputer ini, yang didahulukan dulu.
 
-    Dipakai "path_drive" kalau diisi (boleh drive/komputer mana saja). Kalau
-    kosong, dirakit dari foto.root + folder_drive seperti pengaturan lama.
+    "path_drive" boleh satu path atau daftar path. Daftar dipakai waktu desain
+    direvisi dan disimpan di tempat lain: folder revisi ditaruh paling depan,
+    folder lama di belakangnya. Folder produk yang ada di keduanya diambil dari
+    revisi; yang belum direvisi, dan produk baru yang masih dibuat di folder
+    lama, tetap terbaca dari folder lama. Kalau kosong, dirakit dari
+    foto.root + folder_drive seperti pengaturan lama.
     """
     j = cfg['jenis'][jenis]
-    khusus = (j.get('path_drive') or '').strip()
-    if khusus:
-        return os.path.normpath(khusus)
+    khusus = j.get('path_drive')
+    if isinstance(khusus, str):
+        khusus = [khusus]
+    daftar = [os.path.normpath(p.strip()) for p in (khusus or []) if p and p.strip()]
+    if daftar:
+        return daftar
     akar = (cfg.get('foto', {}).get('root') or '').strip()
-    return os.path.normpath(os.path.join(akar, j.get('folder_drive') or jenis))
+    return [os.path.normpath(os.path.join(akar, j.get('folder_drive') or jenis))]
+
+
+def dir_jenis(cfg, jenis):
+    """Folder sumber utama satu jenis produk: yang paling depan di dirs_jenis."""
+    return dirs_jenis(cfg, jenis)[0]
+
+
+def jenis_dari_path(cfg, path):
+    """Jenis produk yang pohon sumbernya memuat path ini, atau None.
+
+    Dicocokkan ke akar yang paling panjang dulu, karena folder revisi bisa berada
+    di dalam folder lama jenis yang sama. Pembandingnya menyertakan pemisah
+    folder, supaya "PIN AKRILIK 2" tidak ikut terbaca sebagai "PIN AKRILIK".
+    """
+    target = os.path.normpath(path).lower()
+    calon = []
+    for jenis in cfg['jenis']:
+        for akar in dirs_jenis(cfg, jenis):
+            a = os.path.normpath(akar).lower()
+            if target == a or target.startswith(a.rstrip(os.sep) + os.sep):
+                calon.append((len(a), jenis))
+    return max(calon)[1] if calon else None
+
+
+def pola_foto_utama(cfg, jenis):
+    """[[pola, ...], ...] untuk sampul 1, 2, 3 satu jenis produk.
+
+    Urutan sumber: jenis.<nama>.pola_foto_utama, lalu foto.pola_foto_utama, lalu
+    nama tetap foto.nama_foto_utama seperti pengaturan lama. {P} diganti awalan
+    SKU jenisnya, supaya katalog PIN AKRILIK yang nyasar ke folder jibbitz tidak
+    ikut jadi sampul jibbitz. Pola yang memuat "/" berlaku untuk subfolder
+    bersama, mis. "Sepatu/...", yang fotonya dipakai semua toko.
+    """
+    fcfg = cfg.get('foto', {})
+    pola = cfg['jenis'][jenis].get('pola_foto_utama') or fcfg.get('pola_foto_utama')
+    if not pola:
+        pola = [[n] for n in (fcfg.get('nama_foto_utama') or [])]
+    prefix = cfg['jenis'][jenis]['prefix_sku']
+    return [[p.replace('{P}', prefix) for p in slot] for slot in pola]
 
 
 def kode_seri(nama_seri):
@@ -1148,19 +1194,41 @@ def setel_tahap(folder, tahap, catatan='', oleh=''):
     return n
 
 
-def tulis_manifest_r2(cfg, kunci_url):
+def tulis_manifest_r2(cfg, kunci_url, ukuran=None):
     """Simpan daftar "kunci -> URL" ke berkas teks yang ikut git.
 
     Membaca isi bucket butuh kunci akses, sedangkan karyawan tidak perlu — dan
     sebaiknya tidak — memilikinya. Daftar ini dibagikan lewat git supaya semua
     komputer bisa menyusun URL tanpa kredensial apa pun.
     """
+    # Ukuran tiap objek ikut dicatat kalau ada. Dengan itu status folder bisa tahu
+    # desain di Drive sudah berubah dari yang tersimpan di R2 — nama berkas desain
+    # revisi sama dengan yang lama — tanpa menghubungi R2 dan tanpa kunci akses.
+    ukuran = ukuran or {}
     os.makedirs(os.path.dirname(MANIFEST_R2), exist_ok=True)
     with open(MANIFEST_R2, 'w', encoding='utf-8-sig', newline='') as f:
         w = csv.writer(f)
-        w.writerow(['path', 'url'])
-        w.writerows(sorted(kunci_url.items()))
+        w.writerow(['path', 'url', 'ukuran'])
+        for kunci, tautan in sorted(kunci_url.items()):
+            w.writerow([kunci, tautan, ukuran.get(kunci, '')])
     return len(kunci_url)
+
+
+def ukuran_manifest_r2(_ingatan={}):
+    """{path: ukuran} dari daftar bersama; kosong kalau ukurannya belum dicatat."""
+    if not os.path.exists(MANIFEST_R2):
+        return {}
+    cap = os.path.getmtime(MANIFEST_R2)
+    if _ingatan.get('cap') == cap:
+        return _ingatan['isi']
+    hasil = {}
+    with open(MANIFEST_R2, encoding='utf-8-sig', newline='') as f:
+        for r in csv.DictReader(f):
+            n = (r.get('ukuran') or '').strip()
+            if r.get('path') and n.isdigit():
+                hasil[r['path']] = int(n)
+    _ingatan['cap'], _ingatan['isi'] = cap, hasil
+    return hasil
 
 
 def jalur_manifest_r2():

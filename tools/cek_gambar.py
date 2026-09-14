@@ -138,16 +138,27 @@ def periksa(inti, cfg, cetak=print, lapor=None, toko=None):
 
 
 def folder_drive(cfg, inti):
-    """[(jenis, path)] seluruh folder produk di Drive."""
+    """[(jenis, path)] seluruh folder produk di Drive.
+
+    Kalau satu jenis punya beberapa folder sumber, folder produk yang sama hanya
+    diambil dari sumber yang paling depan — sama seperti daftar di tab folder.
+    """
     import re
     hasil = []
     for jenis in cfg['jenis']:
-        akar = inti.dir_jenis(cfg, jenis)
-        if not os.path.isdir(akar):
-            continue
-        for nama in sorted(os.listdir(akar)):
-            p = os.path.join(akar, nama)
-            if re.match(r'^PRODUK\s+\d+\s*-\s*\d+$', nama.strip(), re.I) and os.path.isdir(p):
+        sudah = set()
+        for akar in inti.dirs_jenis(cfg, jenis):
+            if not os.path.isdir(akar):
+                continue
+            for nama in sorted(os.listdir(akar)):
+                m = re.match(r'^PRODUK\s+0*(\d+)\s*-\s*0*(\d+)$', nama.strip(), re.I)
+                p = os.path.join(akar, nama)
+                if not m or not os.path.isdir(p):
+                    continue
+                rentang = (int(m.group(1)), int(m.group(2)))
+                if rentang in sudah:
+                    continue
+                sudah.add(rentang)
                 hasil.append((jenis, p))
     return hasil
 

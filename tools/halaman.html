@@ -43,6 +43,7 @@ border:1px solid transparent;white-space:nowrap}
 .t-siap{color:var(--hijau);border-color:#2b5236;background:#1c3324}
 .t-tanpasku{color:var(--merah);border-color:#5c2b26;background:#3a1e1b}
 .t-tanpatoko{color:var(--merah);border-color:#5c2b26;background:#3a1e1b}
+.t-berubah{color:var(--kuning);border-color:#7a5a12;background:#3a2f16;font-weight:600}
 .angka{color:var(--redup);font-variant-numeric:tabular-nums;white-space:nowrap}
 .redup{color:var(--redup)} .kecil{font-size:12px}
 .baris{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -124,6 +125,7 @@ tr.rinci li{margin:2px 0}
             <option value="sebagian">Sebagian sudah di R2</option>
             <option value="siap">Sudah di R2, siap listing</option>
             <option value="tanpasku">SKU belum diimpor</option>
+            <option value="berubah">Desain berubah, unggah ulang</option>
             <option value="tanpatoko">Folder toko tidak dikenali</option>
             <option value="kosong">Belum ada foto</option>
           </select>
@@ -175,6 +177,7 @@ tr.rinci li{margin:2px 0}
           <dt><span class="tanda t-kosong">belum ada foto</span></dt><dd>foldernya ada tapi belum berisi gambar</dd>
           <dt><span class="tanda t-baru">foto ada, belum diproses</span></dt><dd>siap diproses — tekan “Proses folder ini”</dd>
           <dt><span class="tanda t-sebagian">sebagian sudah di R2</span></dt><dd>sebagian fotonya sudah terunggah, sisanya belum — proses lagi untuk melanjutkan</dd>
+          <dt><span class="tanda t-berubah">desain berubah · unggah ulang</span></dt><dd>foto di Drive berbeda dengan yang tersimpan di R2 — biasanya karena desainnya direvisi. Proses ulang foldernya: foto yang sama dilewati sendiri, yang berubah ditimpa</dd>
           <dt><span class="tanda t-tanpasku">SKU belum diimpor</span></dt><dd>fotonya ada, tapi SKU-nya tidak ada di sku.csv sehingga belum bisa masuk listing mana pun</dd>
           <dt><b>Kolom Tahap</b></dt><dd>diisi sendiri lewat tombol di kartu
             “Folder dicentang”, <b>tidak pernah berubah otomatis</b> — berhasil membuat
@@ -227,6 +230,12 @@ tr.rinci li{margin:2px 0}
       <h2>Folder sumber tiap jenis produk</h2>
       <div class="isi">
         <div id="sumber"></div>
+        <div class="arti kecil" style="margin-top:4px">Satu jenis boleh punya lebih dari satu
+          folder — tekan <b>+ folder lain</b>. Urutannya menentukan: folder produk yang ada di
+          beberapa tempat diambil dari yang paling atas. Pakai ini untuk desain revisi —
+          taruh folder revisi di atas dan folder lama di bawahnya, supaya produk yang sudah
+          direvisi memakai desain baru, sedangkan yang belum direvisi dan produk baru yang
+          masih dibuat di folder lama tetap terbaca.</div>
         <div class="baris" style="margin-top:10px">
           <button class="utama" onclick="simpanSumber()">Simpan sumber</button>
           <span id="statusSumber" class="kecil redup"></span>
@@ -703,6 +712,7 @@ function muatDasbor(){
         ${kotak('Sebagian sudah di R2',st('sebagian'),'var(--biru)','sebagian foto sudah naik')}
         ${kotak('Sudah di R2, selesai',st('siap'),'var(--hijau)','tidak perlu diproses lagi')}
         ${kotak('SKU belum diimpor',st('tanpasku'),'var(--merah)','foto ada, SKU belum terdaftar')}
+        ${kotak('Desain berubah',st('berubah'),'var(--kuning)','perlu diunggah ulang')}
         ${kotak('Folder toko tak dikenali',st('tanpatoko'),'var(--merah)','fotonya tidak di TOKO 1/2/3')}
         ${kotak('Belum ada foto',st('kosong'),'var(--redup)','folder kosong')}
       </div>
@@ -778,18 +788,50 @@ function muatStatus(){
 }
 
 /* ---------------------------------------------------------------- sumber */
+// Satu jenis boleh punya beberapa folder sumber, berurutan. Folder produk yang
+// ada di beberapa tempat diambil dari yang paling atas — dipakai untuk desain
+// revisi yang disimpan terpisah dari folder lama.
 function gambarSumber(daftar){
-  $('#sumber').innerHTML=daftar.map((s,i)=>`
-    <div class="baris" style="margin-bottom:8px">
-      <span style="width:96px" class="kecil"><b>${s.jenis}</b></span>
-      <input type="text" class="jalurSumber" data-jenis="${s.jenis}" value="${s.path||''}"
-             style="flex:1">
-      <button onclick="pilihSumber(${i})">Pilih…</button>
-      <span class="tanda ${s.ada?'t-siap':'t-tanpasku'}">${s.ada?'ditemukan':'tidak ada'}</span>
-    </div>`).join('');
+  $('#sumber').innerHTML=daftar.map(s=>{
+    const paths=(s.paths&&s.paths.length)?s.paths:[s.path||''];
+    const ada=s.ada_semua||[s.ada];
+    return `<div class="kartuSumber" data-jenis="${s.jenis}" style="margin-bottom:12px">
+      <div class="baris" style="margin-bottom:4px">
+        <span style="width:96px" class="kecil"><b>${s.jenis}</b></span>
+        <span class="kecil redup">${paths.length>1?'urut dari yang didahulukan':''}</span>
+      </div>
+      ${paths.map((p,k)=>barisSumber(s.jenis,p,ada[k],k)).join('')}
+      <div class="baris" style="margin-left:96px">
+        <button onclick="tambahSumber(this)">+ folder lain</button>
+      </div></div>`;
+  }).join('');
 }
-function pilihSumber(i){
-  const kotak=document.querySelectorAll('.jalurSumber')[i];
+function barisSumber(jenis,p,ada,k){
+  return `<div class="baris barisSumber" style="margin:0 0 6px 96px">
+    <span class="kecil redup" style="width:16px">${k+1}.</span>
+    <input type="text" class="jalurSumber" data-jenis="${jenis}" value="${p||''}" style="flex:1">
+    <button onclick="pilihSumber(this)">Pilih…</button>
+    <button onclick="hapusSumber(this)" title="Hapus folder ini dari daftar">×</button>
+    ${p?`<span class="tanda ${ada?'t-siap':'t-tanpasku'}">${ada?'ditemukan':'tidak ada'}</span>`:''}
+  </div>`;
+}
+function tambahSumber(tombol){
+  const kartu=tombol.closest('.kartuSumber');
+  const n=kartu.querySelectorAll('.barisSumber').length;
+  const wadah=document.createElement('div');
+  wadah.innerHTML=barisSumber(kartu.dataset.jenis,'',false,n);
+  kartu.insertBefore(wadah.firstElementChild,tombol.parentElement);
+}
+function hapusSumber(tombol){
+  const kartu=tombol.closest('.kartuSumber');
+  const baris=tombol.closest('.barisSumber');
+  if(kartu.querySelectorAll('.barisSumber').length<=1){
+    baris.querySelector('.jalurSumber').value='';return;
+  }
+  baris.remove();
+}
+function pilihSumber(tombol){
+  const kotak=tombol.closest('.barisSumber').querySelector('.jalurSumber');
   $('#statusSumber').textContent='menunggu dialog…';
   api('/api/pilih',{awal:kotak.value}).then(r=>{
     $('#statusSumber').textContent='';
@@ -798,7 +840,10 @@ function pilihSumber(i){
 }
 function simpanSumber(){
   const isi={};
-  document.querySelectorAll('.jalurSumber').forEach(k=>isi[k.dataset.jenis]=k.value.trim());
+  document.querySelectorAll('.kartuSumber').forEach(k=>{
+    isi[k.dataset.jenis]=[...k.querySelectorAll('.jalurSumber')]
+      .map(x=>x.value.trim()).filter(Boolean);
+  });
   $('#statusSumber').textContent='menyimpan…';
   api('/api/sumber',{jenis:isi}).then(()=>{
     $('#statusSumber').textContent='tersimpan';
@@ -1231,7 +1276,11 @@ function muatPohon(){
                                  nama:f.nama,siap:f.siap||0});
         r.innerHTML=`<td class="pilihkotak"><input type="checkbox" class="centangFolder"></td>
           <td><span class="ikon" style="margin-left:16px">📂</span>${f.nama}
-            <span class="redup kecil">· ${j.jenis}</span></td>
+            <span class="redup kecil">· ${j.jenis}</span>${
+              (j.akar_semua||[]).length>1
+                ? ` <span class="tanda ${f.sumber===0?'t-siap':'t-kosong'}" title="${f.akar_folder||''}">${
+                    (f.akar_folder||'').split(/[\\/]/).pop()}</span>`
+                : ''}</td>
           <td>${f.siap?`<span class="tanda t-siap">${f.siap} siap</span>`
                       :'<span class="redup kecil">—</span>'}</td>
           <td class="angka" data-k="foto">…</td>

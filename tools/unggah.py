@@ -10,7 +10,7 @@ kiriman besar dengan galat HTTP 408, jadi tiap bagian dibatasi ukurannya dan
 dikirim satu per satu — kalau satu bagian gagal, bagian yang sudah terkirim
 tetap tercatat dan proses bisa dilanjutkan tanpa mengulang dari awal.
 """
-import os, re, subprocess, sys, threading, time
+import fnmatch, os, re, subprocess, sys, threading, time
 from concurrent.futures import ThreadPoolExecutor
 
 import gudang
@@ -119,11 +119,20 @@ def kenali_toko(cfg, dirpath):
         m = re.match(r'^(?:toko|foto|shop|store)[\s_.-]*(\d+)$', potong, re.I)
         if m and 'toko' + m.group(1) in sah:
             return 'toko' + m.group(1)
-    # cocokkan dengan nama toko di config, mis. folder bernama "Graphica Key"
+    # cocokkan dengan nama toko di config, mis. folder bernama "Graphica Key".
+    # "alias" menampung nama folder yang tidak persis sama dengan nama tokonya —
+    # folder revisi jibbitz memakai "Kaitin", sedangkan tokonya "Kaitin.aja";
+    # tanpa alias sepertiga foto dilewati diam-diam sebagai toko tak dikenal.
+    def rapikan(teks):
+        return re.sub(r'[^a-z0-9]', '', str(teks).lower())
+
     for potong in bagian[::-1]:
-        rapi = re.sub(r'[^a-z0-9]', '', potong.lower())
+        rapi = rapikan(potong)
+        if not rapi:
+            continue
         for tk in cfg['toko']:
-            if rapi and rapi == re.sub(r'[^a-z0-9]', '', tk['nama'].lower()):
+            nama_sah = [tk['nama']] + list(tk.get('alias') or [])
+            if any(rapi == rapikan(n) for n in nama_sah):
                 return tk['folder_foto']
     return None
 
@@ -158,15 +167,40 @@ def deteksi(inti, cfg, folder):
     # menimpa yang duluan — foto jibbitz tergantikan desain pin akrilik tanpa
     # ada tanda apa pun. Karena itu berkas yang awalannya tidak cocok dengan
     # pohon tempatnya berada ditolak, bukan diproses.
-    jenis_pohon = None
-    for nama_jenis in cfg['jenis']:
-        akar = os.path.normpath(inti.dir_jenis(cfg, nama_jenis))
-        if os.path.normpath(folder).lower().startswith(akar.lower()):
-            jenis_pohon = nama_jenis
-            break
+    jenis_pohon = inti.jenis_dari_path(cfg, folder)
+
+    # Sampul dikenali dari pola nama per jenis, bukan nama tetap foto1/2/3.png:
+    # folder revisi jibbitz menamainya Katalog_JB-..._sd_JB-... dan Mockup_JB-...,
+    # lalu menaruh foto sepatunya di subfolder "Sepatu" yang dipakai semua toko.
+    pola_per_jenis = {}
+
+    def slot_utama(jenis, nama_berkas, subfolder_bersama=None):
+        """Nomor sampul (1, 2, 3) untuk berkas ini, atau None."""
+        if jenis not in pola_per_jenis:
+            pola_per_jenis[jenis] = inti.pola_foto_utama(cfg, jenis)
+        kecil = nama_berkas.lower()
+        for nomor, pola_slot in enumerate(pola_per_jenis[jenis], 1):
+            for pola in pola_slot:
+                if '/' in pola:
+                    sub, pola_berkas = pola.split('/', 1)
+                    if subfolder_bersama and sub.lower() == subfolder_bersama.lower() \
+                            and fnmatch.fnmatchcase(kecil, pola_berkas.lower()):
+                        return nomor
+                elif not subfolder_bersama and fnmatch.fnmatchcase(kecil, pola.lower()):
+                    return nomor
+        return None
+
+    def buat(toko, jenis, seri, tipe, kunci, asal, nama):
+        slug = cfg['jenis'][jenis]['slug']
+        return {'toko': toko, 'nama_toko': nama_toko.get(toko, toko), 'jenis': jenis,
+                'seri': seri, 'tipe': tipe, 'kunci': kunci, 'sumber': asal,
+                'nama_tujuan': nama, 'slug': slug,
+                'path_repo': 'foto-upload/{}/{}/{}'.format(toko, slug, nama)}
 
     temuan, tanpa_seri, tak_dikenal, survei = [], [], [], []
     salah_pohon = []
+    bersama = []        # foto subfolder bersama, dibagikan setelah tokonya diketahui
+    terisi = set()      # (folder produk, toko, nomor sampul) yang sudah punya berkas
     for dirpath, _, berkas in os.walk(folder):
         gambar = [f for f in sorted(berkas) if f.lower().endswith(inti.EKSTENSI)]
         if not gambar:
@@ -176,6 +210,11 @@ def deteksi(inti, cfg, folder):
         survei.append({'folder': dirpath, 'gambar': len(gambar), 'toko': toko,
                        'contoh': gambar[:3]})
         if not toko:
+            sub = os.path.basename(dirpath)
+            if jenis_pohon and any(slot_utama(jenis_pohon, f, sub) for f in gambar):
+                bersama.extend((os.path.dirname(dirpath), sub, os.path.join(dirpath, f), f)
+                               for f in gambar)
+                continue
             tak_dikenal.append('{} (folder toko tidak dikenali)'.format(dirpath))
             continue
 
@@ -193,10 +232,17 @@ def deteksi(inti, cfg, folder):
             if kunci in seri_dari_sku:
                 jenis, seri, tipe = seri_dari_sku[kunci][0], seri_dari_sku[kunci][1], 'varian'
                 nama = kunci + os.path.splitext(f)[1].lower()
-            elif f.lower() in peta_utama and jenis_folder:
+            elif jenis_folder and slot_utama(jenis_folder, f):
+                slot = slot_utama(jenis_folder, f)
+                induk = os.path.dirname(dirpath)
+                if (induk, toko, slot) in terisi:
+                    tak_dikenal.append('{} (sampul {} sudah diisi berkas lain)'.format(
+                        asal, slot))
+                    continue
+                terisi.add((induk, toko, slot))
                 jenis, seri, tipe = jenis_folder, seri_folder, 'utama'
                 nama = '{}-{}-utama{}.png'.format(
-                    cfg['jenis'][jenis]['prefix_sku'], seri, peta_utama[f.lower()])
+                    cfg['jenis'][jenis]['prefix_sku'], seri, slot)
                 kunci = os.path.splitext(nama)[0].upper()
             elif re.match(r'^[A-Z]{2}-', kunci) and kunci.split('-')[0] in jenis_dari_prefix:
                 # SKU belum terdaftar di sku.csv — tetap diproses, serinya dikosongkan
@@ -209,13 +255,30 @@ def deteksi(inti, cfg, folder):
             if jenis_pohon and jenis != jenis_pohon:
                 salah_pohon.append((asal, jenis))
                 continue
-            slug = cfg['jenis'][jenis]['slug']
-            temuan.append({
-                'toko': toko, 'nama_toko': nama_toko.get(toko, toko), 'jenis': jenis,
-                'seri': seri, 'tipe': tipe, 'kunci': kunci, 'sumber': asal,
-                'nama_tujuan': nama, 'slug': slug,
-                'path_repo': 'foto-upload/{}/{}/{}'.format(toko, slug, nama),
-            })
+            temuan.append(buat(toko, jenis, seri, tipe, kunci, asal, nama))
+    # Foto subfolder bersama (mis. "Sepatu") dipasang sebagai sampul di setiap
+    # toko yang ada di folder produk yang sama.
+    for induk, sub, asal, f in bersama:
+        varian = [x for x in temuan if x['tipe'] == 'varian' and x['seri']
+                  and os.path.dirname(os.path.dirname(x['sumber'])) == induk]
+        if not varian:
+            tak_dikenal.append('{} (tidak ada foto produk terdaftar di folder yang sama)'
+                               .format(asal))
+            continue
+        contoh = varian[0]
+        slot = slot_utama(contoh['jenis'], f, sub)
+        if not slot:
+            tak_dikenal.append(asal)
+            continue
+        for toko in sorted({x['toko'] for x in varian}):
+            if (induk, toko, slot) in terisi:
+                continue
+            terisi.add((induk, toko, slot))
+            nama = '{}-{}-utama{}.png'.format(
+                cfg['jenis'][contoh['jenis']]['prefix_sku'], contoh['seri'], slot)
+            temuan.append(buat(toko, contoh['jenis'], contoh['seri'], 'utama',
+                               os.path.splitext(nama)[0].upper(), asal, nama))
+
     if salah_pohon:
         lain = {}
         for asal, jenis in salah_pohon:
@@ -305,8 +368,8 @@ def migrasi_r2(inti, cfg, cetak=print):
         with ThreadPoolExecutor(max_workers=int(cfg.get('salinan_serentak') or 8)) as kolam:
             list(kolam.map(satu, sisa))
 
-    semua = klien.daftar('foto-upload/')
-    jumlah = inti.tulis_manifest_r2(cfg, {k: klien.alamat(k) for k in semua})
+    semua = klien.daftar('foto-upload/', dengan_ukuran=True)
+    jumlah = inti.tulis_manifest_r2(cfg, {k: klien.alamat(k) for k in semua}, semua)
     cetak('[migrasi] selesai — {} gagal, {} foto tercatat di data/foto_r2.csv'.format(
         hitung['gagal'], jumlah))
     cetak('[migrasi] commit berkas itu supaya komputer lain ikut memakainya')
@@ -326,11 +389,13 @@ def segarkan_manifest_r2(inti, cfg, cetak=print):
         return 0
     sebelum = sum(len(v) for v in inti.baca_manifest_r2(cfg).values())
     try:
-        semua = klien.daftar('foto-upload/')
+        # ukurannya ikut diambil — terkirim dalam jawaban yang sama, tanpa biaya
+        # tambahan — supaya status folder bisa mengenali desain yang berubah
+        semua = klien.daftar('foto-upload/', dengan_ukuran=True)
     except Exception as e:
         cetak('[daftar] gagal membaca isi bucket: {}'.format(e))
         return 0
-    jumlah = inti.tulis_manifest_r2(cfg, {k: klien.alamat(k) for k in semua})
+    jumlah = inti.tulis_manifest_r2(cfg, {k: klien.alamat(k) for k in semua}, semua)
     baru = jumlah - sebelum
     cetak('[daftar] data/foto_r2.csv disegarkan: {} foto di bucket{}'.format(
         jumlah, ' (+{} sejak terakhir)'.format(baru) if baru > 0 else ''))
@@ -352,12 +417,32 @@ def segarkan_manifest_r2(inti, cfg, cetak=print):
     return jumlah
 
 
+def _ukuran_di_r2(klien, jalur):
+    """{path: ukuran} objek R2 untuk path-path ini.
+
+    Dibaca lewat daftar isi bucket per awalan pendek, bukan satu per satu, jadi
+    satu folder produk cukup beberapa permintaan kecil. Kalau gagal dibaca,
+    hasilnya kosong dan semua foto dikirim: lebih lambat, tapi tidak pernah
+    melewatkan foto yang berubah.
+    """
+    awalan = set()
+    for p in jalur:
+        folder, _, berkas = p.rpartition('/')
+        awalan.add('{}/{}'.format(folder, berkas[:7]))
+    hasil = {}
+    for a in sorted(awalan):
+        try:
+            hasil.update(klien.daftar(a, dengan_ukuran=True))
+        except Exception as e:
+            print('   ! isi R2 gagal dibaca ({}): {}'.format(a, e))
+    return hasil
+
+
 def kirim_r2(inti, cfg, db, temuan, maju, paksa=False):
     """Unggah foto ke Cloudflare R2, beberapa berkas sekaligus.
 
-    Foto yang sudah pernah naik dilewati. Dua sumbernya: database komputer ini
-    dan daftar bersama data/foto_r2.csv — yang kedua penting supaya folder yang
-    sudah dikerjakan komputer lain tidak diunggah ulang dari sini.
+    Foto yang di R2 sudah sama persis dilewati, siapa pun yang dulu
+    mengunggahnya — dibandingkan langsung dengan isi bucket.
     """
     from concurrent.futures import ThreadPoolExecutor
     klien = modul_r2.dari_config(cfg)
@@ -365,11 +450,20 @@ def kirim_r2(inti, cfg, db, temuan, maju, paksa=False):
     if paksa:
         sisa, sudah = temuan, []
     else:
-        ada = gudang.sudah_terunggah(db) | inti.jalur_manifest_r2()
-        sisa = [t for t in temuan if t['path_repo'] not in ada]
-        sudah = [t for t in temuan if t['path_repo'] in ada]
+        # Dilewati hanya kalau objek di R2 sama persis ukurannya dengan berkas yang
+        # akan dikirim. Dulu cukup namanya sudah ada, dan itu membuat desain revisi
+        # yang namanya sama (JB-0003451.png) tidak pernah naik, sementara lognya
+        # menulis "sudah ada di R2".
+        di_r2 = _ukuran_di_r2(klien, [t['path_repo'] for t in temuan])
+        sudah = [t for t in temuan if di_r2.get(t['path_repo']) == t.get('ukuran')]
+        sama = {id(t) for t in sudah}
+        sisa = [t for t in temuan if id(t) not in sama]
         for t in sudah:
             t['url'] = klien.alamat(t['path_repo'])
+        diganti = sum(1 for t in sisa if t['path_repo'] in di_r2)
+        if diganti:
+            print('[3/3] {} foto di R2 berbeda dengan sumbernya dan akan ditimpa'
+                  .format(diganti))
 
     if sudah:
         print('[3/3] {} foto sudah ada di R2, dilewati'.format(len(sudah)))

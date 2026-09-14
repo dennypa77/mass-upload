@@ -28,7 +28,7 @@ SINGGAHAN = {}                # cache hasil pemindaian folder
 BERKAS_CACHE = os.path.join(inti.AKAR, 'data', 'cache_folder.json')
 # Dinaikkan tiap kali isi hasil status_folder berubah bentuk, supaya cache lama
 # dari versi sebelumnya dibuang, bukan ditampilkan sebagai angka yang salah.
-VERSI_CACHE = 4
+VERSI_CACHE = 5
 
 
 def muat_cache():
@@ -111,25 +111,40 @@ def pohon(cfg):
     tahap = inti.baca_tahap()
     hasil = []
     for jenis, j in cfg['jenis'].items():
-        akar = inti.dir_jenis(cfg, jenis)
-        anak = []
-        if os.path.isdir(akar):
+        semua_akar = inti.dirs_jenis(cfg, jenis)
+        anak, sudah = [], set()
+        # Folder yang sama bisa ada di beberapa akar, mis. folder revisi dan folder
+        # lama. Yang dipakai akar paling depan, jadi desain revisi menggantikan
+        # yang lama, sementara folder yang belum direvisi — dan produk baru yang
+        # masih dibuat di folder lama — tetap terbaca.
+        for urutan, akar in enumerate(semua_akar):
+            if not os.path.isdir(akar):
+                continue
             for nama in sorted(os.listdir(akar)):
                 rentang = nomor_folder(nama)
-                if rentang and os.path.isdir(os.path.join(akar, nama)):
-                    nomor = siap.get(jenis.upper(), [])
-                    n_siap = (bisect_right(nomor, rentang[1])
-                              - bisect_left(nomor, rentang[0])) if nomor else 0
-                    t = tahap.get(inti.kunci_tahap(jenis, rentang[0], rentang[1]))
-                    anak.append({'nama': nama, 'path': os.path.join(akar, nama),
-                                 'dari': rentang[0], 'sampai': rentang[1],
-                                 'siap': n_siap,
-                                 'tahap': (t or {}).get('tahap', 'belum'),
-                                 'tahap_waktu': (t or {}).get('waktu', ''),
-                                 'tahap_catatan': (t or {}).get('catatan', '')})
-        hasil.append({'jenis': jenis, 'prefix': j['prefix_sku'], 'akar': akar,
-                      'khusus': bool((j.get('path_drive') or '').strip()),
-                      'ada': os.path.isdir(akar), 'folder': anak})
+                if not rentang or rentang in sudah \
+                        or not os.path.isdir(os.path.join(akar, nama)):
+                    continue
+                sudah.add(rentang)
+                nomor = siap.get(jenis.upper(), [])
+                n_siap = (bisect_right(nomor, rentang[1])
+                          - bisect_left(nomor, rentang[0])) if nomor else 0
+                t = tahap.get(inti.kunci_tahap(jenis, rentang[0], rentang[1]))
+                anak.append({'nama': nama, 'path': os.path.join(akar, nama),
+                             'dari': rentang[0], 'sampai': rentang[1],
+                             'siap': n_siap,
+                             'sumber': urutan, 'akar_folder': akar,
+                             'tahap': (t or {}).get('tahap', 'belum'),
+                             'tahap_waktu': (t or {}).get('waktu', ''),
+                             'tahap_catatan': (t or {}).get('catatan', '')})
+        anak.sort(key=lambda f: (f['dari'], f['sampai']))
+        khusus = j.get('path_drive')
+        hasil.append({'jenis': jenis, 'prefix': j['prefix_sku'], 'akar': semua_akar[0],
+                      'akar_semua': semua_akar,
+                      'khusus': bool(khusus if isinstance(khusus, list)
+                                     else (khusus or '').strip()),
+                      'ada': any(os.path.isdir(a) for a in semua_akar),
+                      'folder': anak})
     return hasil
 
 
@@ -232,8 +247,16 @@ def status_folder(cfg, jenis, path, dari, sampai, segar=False):
     if not segar and path in SINGGAHAN:
         return SINGGAHAN[path]
 
-    n_foto = n_foto_toko = 0
+    n_foto = n_foto_toko = n_beda = 0
     toko_ada = set()
+    # Nama berkas desain revisi sama dengan desain lama, jadi hanya dari nama,
+    # folder revisi terbaca "sudah di R2" padahal yang di R2 masih desain lama.
+    # Ukuran foto varian dibandingkan dengan ukuran yang dicatat di daftar
+    # bersama — tanpa menghubungi R2.
+    di_r2 = inti.ukuran_manifest_r2()
+    j = cfg['jenis'].get(jenis) or {}
+    awalan = (j.get('prefix_sku') or '').upper() + '-'
+    slug = j.get('slug')
     for dirpath, _, berkas in os.walk(path):
         gambar = [f for f in berkas if f.lower().endswith(inti.EKSTENSI)]
         if not gambar:
@@ -243,6 +266,22 @@ def status_folder(cfg, jenis, path, dari, sampai, segar=False):
         if toko:
             toko_ada.add(toko)
             n_foto_toko += len(gambar)
+            if not (di_r2 and slug):
+                continue
+            for f in gambar:
+                batang, ekor = os.path.splitext(f)
+                if not batang.upper().startswith(awalan) or not inti.nomor_sku(batang):
+                    continue
+                n_r2 = di_r2.get('foto-upload/{}/{}/{}{}'.format(
+                    toko, slug, batang.upper(), ekor.lower()))
+                if n_r2 is None:
+                    continue
+                try:
+                    n = os.path.getsize(os.path.join(dirpath, f))
+                except OSError:
+                    continue
+                if n <= inti.BATAS_FOTO and n != n_r2:
+                    n_beda += 1
 
     n_sku = _dalam(_indeks_sku().get(jenis.upper(), []), dari, sampai)
     semua, terunggah = _indeks_db(cfg).get(jenis.upper(), ([], []))
@@ -257,6 +296,8 @@ def status_folder(cfg, jenis, path, dari, sampai, segar=False):
         keadaan, label = 'tanpatoko', 'folder toko tidak dikenali'
     elif n_sku == 0:
         keadaan, label = 'tanpasku', 'SKU belum diimpor'
+    elif n_beda:
+        keadaan, label = 'berubah', 'desain berubah · unggah ulang'
     elif n_unggah and n_unggah >= n_db and n_db >= n_sku:
         keadaan, label = 'siap', 'sudah di R2 · siap listing'
     elif n_db:
@@ -264,7 +305,7 @@ def status_folder(cfg, jenis, path, dari, sampai, segar=False):
     else:
         keadaan, label = 'baru', 'foto ada, belum diproses'
 
-    hasil = {'path': path, 'foto': n_foto, 'foto_toko': n_foto_toko,
+    hasil = {'path': path, 'foto': n_foto, 'foto_toko': n_foto_toko, 'beda': n_beda,
              'toko': sorted(toko_ada), 'sku': n_sku,
              'db': n_db, 'unggah': n_unggah, 'keadaan': keadaan, 'label': label,
              'jenis': jenis, 'nama': os.path.basename(path)}
@@ -850,9 +891,16 @@ class Penangan(BaseHTTPRequestHandler):
                 # saat memperbarui dari GitHub.
                 lokal = inti.baca_lokal()
                 for jenis, jalur in (badan.get('jenis') or {}).items():
-                    if jenis in cfg['jenis']:
-                        lokal.setdefault('jenis', {}).setdefault(jenis, {})['path_drive'] = \
-                            (jalur or '').strip() or None
+                    if jenis not in cfg['jenis']:
+                        continue
+                    # satu path disimpan sebagai teks, beberapa sebagai daftar
+                    # berurutan — yang paling depan didahulukan
+                    if isinstance(jalur, list):
+                        bersih = [p.strip() for p in jalur if p and p.strip()]
+                        nilai = bersih if len(bersih) > 1 else (bersih[0] if bersih else None)
+                    else:
+                        nilai = (jalur or '').strip() or None
+                    lokal.setdefault('jenis', {}).setdefault(jenis, {})['path_drive'] = nilai
                 if badan.get('root') is not None:
                     lokal.setdefault('foto', {})['root'] = (badan['root'] or '').strip() or None
                 inti.tulis_lokal(lokal)
@@ -861,9 +909,10 @@ class Penangan(BaseHTTPRequestHandler):
                 simpan_cache()
                 catat('[ui] folder sumber disimpan')
                 for jenis in cfg['jenis']:
-                    d = inti.dir_jenis(cfg, jenis)
-                    catat('   {:<12} {}  {}'.format(
-                        jenis, d, '' if os.path.isdir(d) else '(tidak ditemukan)'))
+                    for i, d in enumerate(inti.dirs_jenis(cfg, jenis)):
+                        catat('   {:<12} {}. {}  {}'.format(
+                            jenis if i == 0 else '', i + 1, d,
+                            '' if os.path.isdir(d) else '(tidak ditemukan)'))
                 return self._kirim({'ok': True})
             if self.path == '/api/config':
                 cfg['foto']['base_url'] = (badan.get('base_url') or '').strip().rstrip('/') or None
@@ -893,9 +942,15 @@ class Penangan(BaseHTTPRequestHandler):
         n_out = len([f for f in os.listdir(inti.DIR_OUT)
                      if f.endswith('.xlsx') and not f.startswith('~$')]) \
             if os.path.isdir(inti.DIR_OUT) else 0
-        sumber = [{'jenis': j, 'path': inti.dir_jenis(cfg, j),
-                   'khusus': bool((cfg['jenis'][j].get('path_drive') or '').strip()),
-                   'ada': os.path.isdir(inti.dir_jenis(cfg, j))} for j in cfg['jenis']]
+        sumber = []
+        for j in cfg['jenis']:
+            semua = inti.dirs_jenis(cfg, j)
+            khusus = cfg['jenis'][j].get('path_drive')
+            sumber.append({'jenis': j, 'path': semua[0], 'paths': semua,
+                           'khusus': bool(khusus if isinstance(khusus, list)
+                                          else (khusus or '').strip()),
+                           'ada': os.path.isdir(semua[0]),
+                           'ada_semua': [os.path.isdir(p) for p in semua]})
         return {'akar': inti.AKAR, 'root_drive': cfg['foto'].get('root'), 'sumber': sumber,
                 'template': inti.info_template(cfg),
                 'tambahan': daftar_tambahan(cfg),
