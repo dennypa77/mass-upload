@@ -12,7 +12,7 @@ Isinya:
   - tombol proses per folder, dan langkah lain (impor, cek, build, ekspor URL)
   - log berjalan
 """
-import json, os, re, subprocess, sys, threading, time, traceback, webbrowser
+import json, os, re, socket, subprocess, sys, threading, time, traceback, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -977,13 +977,20 @@ def _cap_kode():
     return tuple(os.path.getmtime(f) if os.path.exists(f) else 0 for f in BERKAS_KODE)
 
 
-def awasi_kode():
+def awasi_kode(server):
     """Jalankan ulang server sendiri kalau kode Python-nya berubah.
 
     halaman.html dibaca ulang tiap permintaan, tapi kode Python hanya dimuat
     sekali. Tanpa ini, halaman baru bisa memanggil endpoint yang belum ada di
     server yang sedang jalan — gejalanya tombol atau dropdown diam saja.
     Penjalanan ulang ditunda selama masih ada pekerjaan berlangsung.
+
+    Dulu memakai os.execv. Di Windows itu tidak mengganti proses di tempat:
+    proses baru dibuat, dan yang lama tidak selalu keluar — pernah dua server
+    sama-sama memegang port ini, sehingga permintaan browser terbagi acak dan
+    tombol bisa menjawab "masih ada pekerjaan lain" dari server yang lognya
+    tidak sedang dilihat. Sekarang port dilepas dulu, server baru dijalankan,
+    lalu proses ini diakhiri dengan pasti.
     """
     awal = _cap_kode()
     while True:
@@ -992,21 +999,68 @@ def awasi_kode():
             print('[server] kode berubah, menjalankan ulang…')
             catat('[server] kode berubah, server dijalankan ulang')
             try:
-                os.execv(sys.executable, [sys.executable] + sys.argv)
+                server.server_close()
+                subprocess.Popen([sys.executable] + sys.argv,
+                                 env=dict(os.environ, SHOPEE_JALAN_ULANG='1'))
             except Exception as e:      # kalau gagal, cukup beri tahu
                 print('[server] gagal menjalankan ulang: {}'.format(e))
                 return
+            os._exit(0)
+
+
+class ServerTunggal(ThreadingHTTPServer):
+    """Server yang tidak mau berbagi port dengan server lain.
+
+    ThreadingHTTPServer bawaan memasang SO_REUSEADDR, dan di Windows itu membuat
+    proses kedua tetap boleh mendengarkan port yang sudah dipegang proses lain.
+    Pernah terjadi: dua server sama-sama memegang port 8765, sebuah pekerjaan
+    berjalan di server yang lognya tidak sedang dilihat, dan tombol Export terus
+    menjawab "masih ada pekerjaan lain".
+    """
+    allow_reuse_address = False
+
+    def server_bind(self):
+        if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
+def buat_server(port, tunggu=0):
+    """Pegang port untuk server ini; None kalau sudah dipakai server lain.
+
+    tunggu (detik) dipakai waktu server memulai ulang dirinya: proses lama baru
+    saja melepas port, jadi sesaat masih mungkin tertolak.
+    """
+    batas = time.time() + tunggu
+    while True:
+        try:
+            return ServerTunggal(('127.0.0.1', port), Penangan)
+        except OSError:
+            if time.time() >= batas:
+                return None
+            time.sleep(0.3)
 
 
 def main():
     alamat = 'http://127.0.0.1:{}'.format(PORT)
-    server = ThreadingHTTPServer(('127.0.0.1', PORT), Penangan)
+    ulang = bool(os.environ.get('SHOPEE_JALAN_ULANG'))
+    server = buat_server(PORT, tunggu=5 if ulang else 0)
+    if server is None:
+        # Jangan ikut mendengarkan. Cukup arahkan ke server yang sudah berjalan,
+        # supaya membuka WEB.bat dua kali tidak lagi melahirkan server ganda.
+        print('Server sudah berjalan di {} — jendela ini boleh ditutup.'.format(alamat))
+        if not ulang:
+            webbrowser.open(alamat)
+        return
     print('Tools Shopee Mass Upload berjalan di {}'.format(alamat))
     print('Tutup jendela ini untuk menghentikan server.')
     muat_cache()
     catat('[siap] buka {} di browser'.format(alamat))
-    threading.Timer(0.8, lambda: webbrowser.open(alamat)).start()
-    threading.Thread(target=awasi_kode, daemon=True).start()
+    # browser hanya dibuka waktu WEB.bat dijalankan, bukan tiap kali server
+    # memulai ulang dirinya karena kodenya berubah
+    if not os.environ.get('SHOPEE_JALAN_ULANG'):
+        threading.Timer(0.8, lambda: webbrowser.open(alamat)).start()
+    threading.Thread(target=awasi_kode, args=(server,), daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
