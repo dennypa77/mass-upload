@@ -577,6 +577,11 @@ tr.rinci li{margin:2px 0}
 let sejak=0, pilih=null, pengamat=null;
 let TOKO=[];          // toko dari config: {nama, kode, folder_foto}
 let tokoTandai=null;  // toko yang dicentang untuk ditandai; null = semua toko
+// Halaman ini dibaca ulang tiap dimuat, tapi server baru memuat kode barunya
+// setelah pekerjaan yang sedang berjalan selesai. Server yang belum mengenal
+// tahap per toko mengabaikan pilihan toko dan menandai semua toko sekaligus —
+// jadi selama itu penandaan per toko tidak ditawarkan.
+let SERVER_TAHAP_TOKO=true;
 let dipilih=new Map();   // path -> folder ; pilihan ini dibawa ke semua langkah
 
 function daftarLingkup(){
@@ -1276,7 +1281,7 @@ function ringkasTahap(tt){
 function gambarTahap(tr,tt,ringkasServer){
   tt=tt||{};
   tr.dataset.tahapToko=JSON.stringify(tt);
-  const ring=TOKO.length?ringkasTahap(tt):(ringkasServer||ringkasTahap(tt));
+  const ring=(TOKO.length&&SERVER_TAHAP_TOKO)?ringkasTahap(tt):(ringkasServer||ringkasTahap(tt));
   tr.dataset.tahap=ring;
   const sel=tr.querySelector('[data-k=tahap]');
   if(!sel)return;
@@ -1306,6 +1311,10 @@ function cocokTahap(tr,saringan){
 }
 function pilihanToko(){
   if(!TOKO.length)return '';
+  if(!SERVER_TAHAP_TOKO)return `<div class="kecil" style="color:var(--kuning);margin-bottom:6px">
+    Penandaan per toko baru aktif setelah server dijalankan ulang — server menunggu
+    pekerjaan yang sedang berjalan selesai dulu. Sampai itu, tanda berlaku untuk
+    semua toko.</div>`;
   return `<div class="baris kecil" style="margin-bottom:6px;flex-wrap:wrap">
     <span class="redup">untuk toko:</span>
     ${TOKO.map(t=>`<label class="centang kecil"><input type="checkbox" class="tokoTandai"
@@ -1351,6 +1360,10 @@ function muatPohon(){
   Promise.all([api('/api/pohon'),api('/api/singgahan').catch(()=>({folder:{}}))])
    .then(([d,c])=>{
     const singgahan=c.folder||{};
+    const contohFolder=(d.jenis||[]).map(j=>j.folder[0]).find(Boolean);
+    const sebelumnya=SERVER_TAHAP_TOKO;
+    SERVER_TAHAP_TOKO=!contohFolder||('tahap_toko' in contohFolder);
+    if(sebelumnya!==SERVER_TAHAP_TOKO)gambarBilah();
     const tb=$('#pohon tbody'); tb.innerHTML=''; let total=0;
     d.jenis.forEach((j,idx)=>{
       const th=document.createElement('tr'); th.className='jenis';
@@ -1550,9 +1563,10 @@ function deteksi(){
 function tandai(tahap){
   const n=dipilih.size;
   if(!n)return;
+  const perToko=SERVER_TAHAP_TOKO&&TOKO.length;
   const dicentang=[...document.querySelectorAll('.tokoTandai:checked')].map(x=>x.value);
-  if(TOKO.length&&!dicentang.length){alert('Centang minimal satu toko.');return;}
-  const semua=!TOKO.length||dicentang.length===TOKO.length;
+  if(perToko&&!dicentang.length){alert('Centang minimal satu toko.');return;}
+  const semua=!perToko||dicentang.length===TOKO.length;
   const untuk=semua?'semua toko'
     :TOKO.filter(t=>dicentang.includes(t.folder_foto)).map(t=>t.nama).join(', ');
   const [teks]=TAHAP[tahap]||TAHAP.belum;
