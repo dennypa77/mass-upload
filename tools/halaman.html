@@ -133,9 +133,10 @@ tr.rinci li{margin:2px 0}
           <select id="saringTahap" class="pilihan" onchange="saring()">
             <option value="">Semua</option>
             <option value="belum">Belum dikerjakan</option>
-            <option value="diekspor">Sudah diekspor</option>
-            <option value="diupload">Sudah di Shopee</option>
-            <option value="ditolak">Ditolak Shopee</option>
+            <option value="kurang">Sebagian toko belum di Shopee</option>
+            <option value="ditolak">Ada toko ditolak Shopee</option>
+            <option value="diekspor">Ada toko baru diekspor</option>
+            <option value="diupload">Sudah di Shopee semua toko</option>
           </select>
           <span class="kecil redup">urut:</span>
           <select id="urutan" class="pilihan" onchange="muatPohon()">
@@ -184,7 +185,13 @@ tr.rinci li{margin:2px 0}
             berkas Excel bukan jaminan Shopee menerimanya, jadi hanya Anda yang boleh
             menyatakan folder itu selesai. Tersimpan di <code>data/tahap_folder.csv</code>
             yang ikut ke GitHub, jadi komputer lain melihat tanda yang sama dan tidak
-            mengerjakan folder yang sudah selesai</dd>
+            mengerjakan folder yang sudah selesai.
+            <br>Dicatat <b>per toko</b>, karena Shopee menerima atau menolak tiap toko
+            sendiri-sendiri. Kalau tokonya tidak sama, kolom ini menampilkan satu keping
+            per toko — mis. <span class="tanda t-siap">GK ✓</span>
+            <span class="tanda t-siap">KTA ✓</span> <span class="tanda t-tanpasku">HOY ✗</span>
+            — jadi toko yang tertinggal langsung terlihat. Saringan
+            <b>Sebagian toko belum di Shopee</b> mengumpulkan semuanya.</dd>
           <dt><span class="tanda t-siap">sudah di R2 · siap listing</span></dt><dd><b>folder ini sudah selesai diunggah</b> — tidak perlu diproses lagi. Foto lengkap di Cloudflare R2 dan SKU-nya terdaftar</dd>
         </dl>
       </div>
@@ -568,6 +575,8 @@ tr.rinci li{margin:2px 0}
 
 <script>
 let sejak=0, pilih=null, pengamat=null;
+let TOKO=[];          // toko dari config: {nama, kode, folder_foto}
+let tokoTandai=null;  // toko yang dicentang untuk ditandai; null = semua toko
 let dipilih=new Map();   // path -> folder ; pilihan ini dibawa ke semua langkah
 
 function daftarLingkup(){
@@ -602,6 +611,7 @@ function gambarBilah(){
        </div>
        <div style="border-top:1px solid var(--garis);margin-top:12px;padding-top:10px">
          <div class="kecil redup" style="margin-bottom:6px">Tandai ${n} folder itu sebagai:</div>
+         ${pilihanToko()}
          <div class="baris">
            <button onclick="tandai('diekspor')">Sudah diekspor</button>
            <button onclick="tandai('diupload')">Sudah di Shopee</button>
@@ -690,11 +700,24 @@ function muatDasbor(){
       h+=`<div class="kartu" style="margin-top:14px">
         <h2>Tahap pengerjaan — diisi sendiri</h2><div class="isi">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
-          ${kotak('Sudah di Shopee',tt('diupload'),'var(--hijau)','sudah diterima Shopee')}
-          ${kotak('Sudah diekspor',tt('diekspor'),'var(--biru)','masuk berkas Excel, belum dipastikan')}
-          ${kotak('Ditolak Shopee',tt('ditolak'),'var(--merah)','perlu diulang')}
+          ${kotak('Di Shopee semua toko',tt('diupload'),'var(--hijau)','tayang di semua toko')}
+          ${kotak('Sebagian toko belum',T.kurang||0,'var(--kuning)','ada toko yang tertinggal')}
+          ${kotak('Ada toko ditolak',T.ada_ditolak||0,'var(--merah)','perlu diulang di toko itu')}
+          ${kotak('Sudah diekspor',tt('diekspor'),'var(--biru)','semua toko, belum dipastikan')}
           ${kotak('Belum ditandai',tt('belum'),'var(--redup)','dari '+T.total+' folder')}
         </div>
+        ${(T.toko||[]).length?`<div style="margin-top:14px;overflow-x:auto"><table>
+          <thead><tr><th>Toko</th><th>Di Shopee</th><th>Diekspor</th><th>Ditolak</th>
+            <th>Belum</th></tr></thead><tbody>
+          ${T.toko.map(x=>{const p=(T.per_toko||{})[x.folder_foto]||{};
+            return `<tr><td><b>${x.nama}</b> <span class="redup kecil">${x.kode}</span></td>
+              <td class="angka" style="color:var(--hijau)">${p.diupload||0}</td>
+              <td class="angka" style="color:var(--biru)">${p.diekspor||0}</td>
+              <td class="angka" style="color:var(--merah)">${p.ditolak||0}</td>
+              <td class="angka">${p.belum||0}</td></tr>`;}).join('')}
+          </tbody></table>
+          <div class="kecil redup" style="margin-top:4px">jumlah folder, dihitung per toko</div>
+        </div>`:''}
         <div class="arti" style="margin-top:12px">Angka di kartu ini <b>tidak pernah
           berubah sendiri</b>. Tandai lewat tombol di tab “1. Folder Produk” setelah
           benar-benar dicek di Shopee — berhasil membuat berkas Excel bukan jaminan
@@ -781,6 +804,11 @@ function muatStatus(){
     if(document.activeElement!==$('#baseurl')) $('#baseurl').value=s.base_url;
     if(s.sumber&&document.activeElement.className!=='jalurSumber') gambarSumber(s.sumber);
     if(s.template)gambarTemplate(s.template);
+    if(s.toko&&!TOKO.length){
+      TOKO=s.toko;
+      gambarBilah();
+      document.querySelectorAll('tr.folder').forEach(tr=>gambarTahap(tr,tahapToko(tr)));
+    }
     if(s.toko)gambarTambahan(s.toko,s.tambahan||[],(s.sumber||[]).map(x=>x.jenis));
     const sku=s.sku?`${s.sku.jumlah} SKU · ${s.sku.jenis} jenis · ${s.sku.seri} seri`
                    :'belum ada';
@@ -1230,15 +1258,64 @@ const TAHAP={belum:['belum dikerjakan','t-kosong'],
              diekspor:['sudah diekspor','t-sebagian'],
              diupload:['sudah di Shopee','t-siap'],
              ditolak:['ditolak Shopee','t-tanpasku']};
+const TANDA_TAHAP={belum:'–',diekspor:'…',diupload:'✓',ditolak:'✗'};
 
-function gambarTahap(tr,tahap,waktu){
-  const [teks,kelas]=TAHAP[tahap]||TAHAP.belum;
-  tr.dataset.tahap=tahap;
+// Tahap dicatat per toko: {toko1:{tahap,waktu,catatan}, ...}. Toko yang tidak
+// punya tanda berarti belum dikerjakan.
+function tahapToko(tr){
+  try{return JSON.parse(tr.dataset.tahapToko||'{}');}catch(e){return {};}
+}
+function daftarTokoTahap(tt){
+  return TOKO.length?TOKO:Object.keys(tt).map(k=>({folder_foto:k,kode:k,nama:k}));
+}
+function ringkasTahap(tt){
+  const nilai=daftarTokoTahap(tt).map(t=>(tt[t.folder_foto]||{}).tahap||'belum');
+  if(!nilai.length)return 'belum';
+  return nilai.every(v=>v===nilai[0])?nilai[0]:'sebagian';
+}
+function gambarTahap(tr,tt,ringkasServer){
+  tt=tt||{};
+  tr.dataset.tahapToko=JSON.stringify(tt);
+  const ring=TOKO.length?ringkasTahap(tt):(ringkasServer||ringkasTahap(tt));
+  tr.dataset.tahap=ring;
   const sel=tr.querySelector('[data-k=tahap]');
   if(!sel)return;
-  sel.innerHTML=tahap==='belum'
-    ? '<span class="redup kecil">—</span>'
-    : `<span class="tanda ${kelas}" title="${waktu||''}">${teks}</span>`;
+  if(ring==='belum'){sel.innerHTML='<span class="redup kecil">—</span>';return;}
+  if(ring!=='sebagian'){
+    const [teks,kelas]=TAHAP[ring]||TAHAP.belum;
+    const waktu=Object.values(tt).map(x=>(x&&x.waktu)||'').sort().pop()||'';
+    sel.innerHTML=`<span class="tanda ${kelas}" title="semua toko${waktu?' · '+waktu:''}">${teks}</span>`;
+    return;
+  }
+  // tokonya tidak sama: satu keping per toko, supaya toko yang tertinggal
+  // langsung terlihat tanpa membuka apa pun
+  sel.innerHTML=daftarTokoTahap(tt).map(t=>{
+    const b=tt[t.folder_foto]||{}, k=b.tahap||'belum';
+    const [teks,kelas]=TAHAP[k]||TAHAP.belum;
+    const judul=t.nama+': '+teks+(b.waktu?' · '+b.waktu:'')+(b.catatan?' · '+b.catatan:'');
+    return `<span class="tanda ${kelas}" title="${judul.replace(/"/g,'&quot;')}">${t.kode} ${TANDA_TAHAP[k]||''}</span>`;
+  }).join(' ');
+}
+function cocokTahap(tr,saringan){
+  const nilai=daftarTokoTahap(tahapToko(tr)).map(t=>(tahapToko(tr)[t.folder_foto]||{}).tahap||'belum');
+  const ring=tr.dataset.tahap||'belum';
+  if(saringan==='belum')return ring==='belum';
+  if(saringan==='diupload')return ring==='diupload';
+  if(saringan==='kurang')return nilai.includes('diupload')&&nilai.some(v=>v!=='diupload');
+  return nilai.includes(saringan);      // diekspor / ditolak: ada toko yang begitu
+}
+function pilihanToko(){
+  if(!TOKO.length)return '';
+  return `<div class="baris kecil" style="margin-bottom:6px;flex-wrap:wrap">
+    <span class="redup">untuk toko:</span>
+    ${TOKO.map(t=>`<label class="centang kecil"><input type="checkbox" class="tokoTandai"
+        value="${t.folder_foto}" ${!tokoTandai||tokoTandai.has(t.folder_foto)?'checked':''}
+        onchange="ubahTokoTandai()"> ${t.nama}</label>`).join('')}
+  </div>`;
+}
+function ubahTokoTandai(){
+  const dicentang=[...document.querySelectorAll('.tokoTandai:checked')].map(x=>x.value);
+  tokoTandai=dicentang.length===TOKO.length?null:new Set(dicentang);
 }
 
 // Selama unggahan panjang, status folder yang baru selesai diperbarui per baris,
@@ -1307,8 +1384,7 @@ function muatPohon(){
           <td class="angka" data-k="git"></td>
           <td data-k="tanda"></td>
           <td data-k="tahap"></td>`;
-        r.dataset.tahap=f.tahap||'belum';
-        gambarTahap(r,f.tahap||'belum',f.tahap_waktu||'');
+        gambarTahap(r,f.tahap_toko||{},f.tahap);
         const kotak=r.querySelector('.centangFolder');
         kotak.checked=dipilih.has(f.path);
         kotak.onclick=e=>{e.stopPropagation();ubahCentang(kotak,r);};
@@ -1377,7 +1453,7 @@ function saring(){
       if(s&&!s.foto) tanpaFoto++;
       if(lolos&&hanya&&s) lolos=!!s.foto;
       if(lolos&&status&&s) lolos=s.keadaan===status;
-      if(lolos&&tahap) lolos=(anak.dataset.tahap||'belum')===tahap;
+      if(lolos&&tahap) lolos=cocokTahap(anak,tahap);
       if(lolos&&!s&&(hanya||status)) menunggu++;
       if(!lolos) tersembunyi++;
       // Baris di bawah judul jenis yang sedang ditutup ikut disembunyikan, tapi
@@ -1474,21 +1550,34 @@ function deteksi(){
 function tandai(tahap){
   const n=dipilih.size;
   if(!n)return;
+  const dicentang=[...document.querySelectorAll('.tokoTandai:checked')].map(x=>x.value);
+  if(TOKO.length&&!dicentang.length){alert('Centang minimal satu toko.');return;}
+  const semua=!TOKO.length||dicentang.length===TOKO.length;
+  const untuk=semua?'semua toko'
+    :TOKO.filter(t=>dicentang.includes(t.folder_foto)).map(t=>t.nama).join(', ');
   const [teks]=TAHAP[tahap]||TAHAP.belum;
   const br=String.fromCharCode(10);
-  if(!confirm('Tandai '+n+' folder sebagai "'+teks+'"?'+br+br
+  if(!confirm('Tandai '+n+' folder sebagai "'+teks+'" untuk '+untuk+'?'+br+br
      +'Tahap ini diisi sendiri, tidak pernah berubah otomatis — jadi isilah '
      +'setelah benar-benar dicek di Shopee.'))return;
   const catatan=tahap==='ditolak'
     ? (prompt('Alasan ditolak (boleh dikosongkan):')||'') : '';
   api('/api/tahap',{folder:[...dipilih.values()].map(f=>(
-        {jenis:f.jenis,dari:f.dari,sampai:f.sampai})),tahap:tahap,catatan:catatan})
+        {jenis:f.jenis,dari:f.dari,sampai:f.sampai})),tahap:tahap,catatan:catatan,
+        toko:semua?[]:dicentang})
     .then(d=>{
       if(!d.ok){alert('Gagal menyimpan.');return;}
       // baris yang tampak diperbarui langsung, tanpa memuat ulang seluruh daftar
       const waktu=new Date().toISOString().slice(0,16).replace('T',' ');
       document.querySelectorAll('tr.folder').forEach(tr=>{
-        if(dipilih.has(tr.dataset.path))gambarTahap(tr,tahap,waktu);
+        if(!dipilih.has(tr.dataset.path))return;
+        const tt=tahapToko(tr);
+        const sasaran=semua?daftarTokoTahap(tt).map(t=>t.folder_foto):dicentang;
+        sasaran.forEach(k=>{
+          if(tahap==='belum')delete tt[k];
+          else tt[k]={tahap:tahap,waktu:waktu,catatan:catatan};
+        });
+        gambarTahap(tr,tt);
       });
       saring(); muatDasbor();
     });

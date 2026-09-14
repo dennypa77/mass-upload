@@ -1094,6 +1094,10 @@ MANIFEST_R2 = os.path.join(AKAR, 'data', 'foto_r2.csv')
 # tidak pernah diisi otomatis: berhasil membuat berkas Excel bukan berarti
 # Shopee menerimanya, jadi hanya orang yang mengerjakan yang boleh menyatakan
 # folder itu selesai. Yang otomatis cuma status foto (lihat status_folder).
+#
+# Dicatat per toko. Shopee menerima atau menolak berkas per toko: satu folder
+# bisa sudah tayang di dua toko sementara toko ketiga ditolak karena templatenya
+# perlu diperbarui, dan tanda per folder menyembunyikan toko mana yang tertinggal.
 TAHAP = ['belum', 'diekspor', 'diupload', 'ditolak']
 TAHAP_ARTI = {
     'belum': 'belum dikerjakan',
@@ -1102,20 +1106,22 @@ TAHAP_ARTI = {
     'ditolak': 'ditolak Shopee, perlu diulang',
 }
 BERKAS_TAHAP = os.path.join(AKAR, 'data', 'tahap_folder.csv')
-KOLOM_TAHAP = ['jenis', 'dari', 'sampai', 'tahap', 'catatan', 'waktu', 'oleh']
+KOLOM_TAHAP = ['jenis', 'dari', 'sampai', 'toko', 'tahap', 'catatan', 'waktu', 'oleh']
 
 
-def kunci_tahap(jenis, dari, sampai):
-    """Penanda folder yang sama di semua komputer.
+def kunci_tahap(jenis, dari, sampai, toko=''):
+    """Penanda folder (dan tokonya) yang sama di semua komputer.
 
     Sengaja memakai rentang nomor SKU, bukan path folder: huruf drive dan letak
-    Google Drive berbeda di tiap komputer, sedangkan rentangnya sama.
+    Google Drive berbeda di tiap komputer, sedangkan rentangnya sama. toko
+    kosong berarti tanda itu berlaku untuk semua toko — bentuk semua tanda
+    sebelum tahap dicatat per toko, jadi tanda lama tetap terbaca.
     """
-    return '{}|{}|{}'.format(str(jenis).upper(), int(dari), int(sampai))
+    return '{}|{}|{}|{}'.format(str(jenis).upper(), int(dari), int(sampai), toko or '')
 
 
 def baca_tahap():
-    """{kunci: baris} tahap manual tiap folder."""
+    """{kunci: baris} tahap manual tiap folder dan toko."""
     hasil = {}
     if not os.path.exists(BERKAS_TAHAP):
         return hasil
@@ -1125,7 +1131,7 @@ def baca_tahap():
                 if not r.get('jenis'):
                     continue
                 try:
-                    k = kunci_tahap(r['jenis'], r['dari'], r['sampai'])
+                    k = kunci_tahap(r['jenis'], r['dari'], r['sampai'], r.get('toko') or '')
                 except (TypeError, ValueError):
                     continue
                 hasil[k] = {c: (r.get(c) or '') for c in KOLOM_TAHAP}
@@ -1137,12 +1143,39 @@ def baca_tahap():
 def tulis_tahap(semua):
     """Simpan seluruh tahap. Berkasnya ikut git supaya komputer lain ikut tahu."""
     os.makedirs(os.path.dirname(BERKAS_TAHAP), exist_ok=True)
-    with open(BERKAS_TAHAP, 'w', encoding='utf-8-sig', newline='') as f:
+    sementara = BERKAS_TAHAP + '.tmp'
+    with open(sementara, 'w', encoding='utf-8-sig', newline='') as f:
         w = csv.DictWriter(f, fieldnames=KOLOM_TAHAP)
         w.writeheader()
-        for k in sorted(semua, key=lambda x: (x.split('|')[0], int(x.split('|')[1]))):
+        for k in sorted(semua, key=lambda x: (x.split('|')[0], int(x.split('|')[1]),
+                                              x.split('|')[3])):
             w.writerow({c: semua[k].get(c, '') for c in KOLOM_TAHAP})
+    # halaman bisa sedang membaca berkas ini sementara orang lain menandai
+    _ganti_berkas(sementara, BERKAS_TAHAP)
     return len(semua)
+
+
+def tahap_per_toko(semua, jenis, dari, sampai, daftar_toko):
+    """{toko: baris atau None} — tahap tiap toko untuk satu folder.
+
+    Tanda "semua toko" dan tanda khusus satu toko bisa sama-sama ada, mis.
+    setelah penandaan dari dua komputer digabung. Yang dipakai yang lebih baru;
+    kalau waktunya sama, yang khusus untuk toko itu.
+    """
+    dasar = semua.get(kunci_tahap(jenis, dari, sampai))
+    hasil = {}
+    for tk in daftar_toko:
+        calon = [x for x in (semua.get(kunci_tahap(jenis, dari, sampai, tk)), dasar) if x]
+        hasil[tk] = max(calon, key=lambda x: x.get('waktu') or '') if calon else None
+    return hasil
+
+
+def ringkas_tahap(per_toko):
+    """Satu kata untuk tahap sebuah folder: tahapnya kalau semua toko sama, atau 'sebagian'."""
+    nilai = [(b or {}).get('tahap') or 'belum' for b in per_toko.values()]
+    if not nilai:
+        return 'belum'
+    return nilai[0] if all(v == nilai[0] for v in nilai) else 'sebagian'
 
 
 def gabung_tahap(berkas_lain):
@@ -1174,21 +1207,56 @@ def gabung_tahap(berkas_lain):
     return baru
 
 
-def setel_tahap(folder, tahap, catatan='', oleh=''):
-    """Tandai beberapa folder sekaligus. folder = [{jenis, dari, sampai}]."""
+def setel_tahap(folder, tahap, catatan='', oleh='', toko=None, daftar_toko=None):
+    """Tandai beberapa folder sekaligus. folder = [{jenis, dari, sampai}].
+
+    toko = toko yang ditandai (folder_foto, mis. toko3); kosong berarti semua
+    toko. daftar_toko = seluruh toko yang ada, dipakai untuk memecah tanda
+    "semua toko" menjadi tanda per toko sebelum sebagian tokonya diubah —
+    supaya menandai Hangs on You "ditolak" tidak menghapus tanda toko lain.
+    """
     if tahap not in TAHAP:
         raise ValueError('tahap tidak dikenal: {}'.format(tahap))
     semua = baca_tahap()
     waktu = time.strftime('%Y-%m-%d %H:%M')
+    toko = [t for t in (toko or []) if t]
+    daftar_toko = list(daftar_toko or [])
+    if toko and daftar_toko and set(toko) >= set(daftar_toko):
+        toko = []                       # semua toko dicentang = satu tanda semua toko
     n = 0
     for f in folder:
-        k = kunci_tahap(f['jenis'], f['dari'], f['sampai'])
-        if tahap == 'belum':
-            semua.pop(k, None)
+        jenis, dari, sampai = str(f['jenis']).upper(), int(f['dari']), int(f['sampai'])
+        k_semua = kunci_tahap(jenis, dari, sampai)
+
+        def baris(tk):
+            return {'jenis': jenis, 'dari': dari, 'sampai': sampai, 'toko': tk,
+                    'tahap': tahap, 'catatan': catatan, 'waktu': waktu, 'oleh': oleh}
+
+        if not toko:
+            # semua toko: satu tanda menggantikan seluruh tanda folder ini
+            awalan = '{}|{}|{}|'.format(jenis, dari, sampai)
+            for k in [k for k in semua if k.startswith(awalan)]:
+                semua.pop(k)
+            if tahap != 'belum':
+                semua[k_semua] = baris('')
         else:
-            semua[k] = {'jenis': str(f['jenis']).upper(), 'dari': int(f['dari']),
-                        'sampai': int(f['sampai']), 'tahap': tahap,
-                        'catatan': catatan, 'waktu': waktu, 'oleh': oleh}
+            # sebagian toko: tanda "semua toko" dipecah dulu per toko, supaya toko
+            # yang tidak dicentang tetap memegang tahapnya
+            dasar = semua.pop(k_semua, None)
+            if dasar:
+                for tk in daftar_toko:
+                    if tk in toko:
+                        continue
+                    k = kunci_tahap(jenis, dari, sampai, tk)
+                    ada = semua.get(k)
+                    if not ada or (dasar.get('waktu') or '') > (ada.get('waktu') or ''):
+                        semua[k] = dict(dasar, toko=tk)
+            for tk in toko:
+                k = kunci_tahap(jenis, dari, sampai, tk)
+                if tahap == 'belum':
+                    semua.pop(k, None)
+                else:
+                    semua[k] = baris(tk)
         n += 1
     tulis_tahap(semua)
     return n

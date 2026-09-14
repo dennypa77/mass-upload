@@ -156,6 +156,7 @@ def pohon(cfg):
     from bisect import bisect_left, bisect_right
     siap = inti.indeks_foto_siap()
     tahap = inti.baca_tahap()
+    daftar_toko = [x['folder_foto'] for x in cfg['toko']]
     hasil = []
     for jenis, j in cfg['jenis'].items():
         semua_akar = inti.dirs_jenis(cfg, jenis)
@@ -176,14 +177,16 @@ def pohon(cfg):
                 nomor = siap.get(jenis.upper(), [])
                 n_siap = (bisect_right(nomor, rentang[1])
                           - bisect_left(nomor, rentang[0])) if nomor else 0
-                t = tahap.get(inti.kunci_tahap(jenis, rentang[0], rentang[1]))
+                per_toko = inti.tahap_per_toko(tahap, jenis, rentang[0], rentang[1],
+                                               daftar_toko)
                 anak.append({'nama': nama, 'path': os.path.join(akar, nama),
                              'dari': rentang[0], 'sampai': rentang[1],
                              'siap': n_siap,
                              'sumber': urutan, 'akar_folder': akar,
-                             'tahap': (t or {}).get('tahap', 'belum'),
-                             'tahap_waktu': (t or {}).get('waktu', ''),
-                             'tahap_catatan': (t or {}).get('catatan', '')})
+                             'tahap': inti.ringkas_tahap(per_toko),
+                             'tahap_toko': {tk: {'tahap': b['tahap'], 'waktu': b['waktu'],
+                                                 'catatan': b['catatan']}
+                                            for tk, b in per_toko.items() if b}})
         anak.sort(key=lambda f: (f['dari'], f['sampai']))
         khusus = j.get('path_drive')
         hasil.append({'jenis': jenis, 'prefix': j['prefix_sku'], 'akar': semua_akar[0],
@@ -582,17 +585,34 @@ def ringkas_status(cfg):
 
     # Tahap manual: satu-satunya angka di sini yang berasal dari pernyataan
     # orangnya, bukan dari isi Drive atau Google Sheet.
-    per_tahap = {t: 0 for t in inti.TAHAP}
+    per_tahap = {t: 0 for t in inti.TAHAP + ['sebagian']}
     tahap_per_jenis = {}
+    daftar_toko = [x['folder_foto'] for x in cfg['toko']]
+    per_toko = {tk: {t: 0 for t in inti.TAHAP} for tk in daftar_toko}
+    kurang = ada_ditolak = 0
     for jenis, f in semua_folder:
         t = f.get('tahap') or 'belum'
         per_tahap[t] = per_tahap.get(t, 0) + 1
         tahap_per_jenis.setdefault(jenis, {}).setdefault(t, 0)
         tahap_per_jenis[jenis][t] += 1
+        nilai = [((f.get('tahap_toko') or {}).get(tk) or {}).get('tahap') or 'belum'
+                 for tk in daftar_toko]
+        for tk, v in zip(daftar_toko, nilai):
+            per_toko[tk][v] += 1
+        # sudah tayang di sebagian toko tapi belum di toko lain: yang paling
+        # mudah terlupa, karena dari luar foldernya tampak sudah dikerjakan
+        if 'diupload' in nilai and any(v != 'diupload' for v in nilai):
+            kurang += 1
+        if 'ditolak' in nilai:
+            ada_ditolak += 1
 
     return {'per_jenis': per_jenis, 'foto_terunggah': jumlah_foto,
             'tahap': {'per_tahap': per_tahap, 'per_jenis': tahap_per_jenis,
-                      'total': len(semua_folder), 'arti': inti.TAHAP_ARTI},
+                      'total': len(semua_folder), 'arti': inti.TAHAP_ARTI,
+                      'per_toko': per_toko, 'kurang': kurang, 'ada_ditolak': ada_ditolak,
+                      'toko': [{'folder_foto': x['folder_foto'], 'nama': x['nama'],
+                                'kode': x.get('kode') or x['folder_foto']}
+                               for x in cfg['toko']]},
             'siap_dikerjakan': seri_belum[:40],
             'jumlah_siap_dikerjakan': len(seri_belum),
             'folder': {'total': len(semua_folder), 'discan': discan,
@@ -793,8 +813,9 @@ class Penangan(BaseHTTPRequestHandler):
                             for f in lingkup:
                                 print('   {:<12} {:05d} - {:05d}'.format(
                                     f['jenis'], int(f['dari']), int(f['sampai'])))
-                            print('   Kalau nanti Shopee menerimanya, tandai folder itu')
-                            print('   "Sudah di Shopee" di tab 1 supaya tidak dikerjakan lagi.')
+                            print('   Kalau nanti Shopee menerimanya, tandai folder itu "Sudah di')
+                            print('   Shopee" di tab 1 — per toko, karena tiap toko bisa diterima')
+                            print('   atau ditolak sendiri-sendiri.')
                         return
                     if nama == 'cek':
                         inti.perintah_cek(cfg, inti.baca_sku())
@@ -908,9 +929,17 @@ class Penangan(BaseHTTPRequestHandler):
                 # ketika dua orang bekerja pada daftar yang sama
                 oleh = (badan.get('oleh') or '').strip() or os.environ.get(
                     'COMPUTERNAME') or ''
+                # toko kosong berarti semua toko; Shopee menerima atau menolak
+                # per toko, jadi tiap toko bisa ditandai sendiri-sendiri
+                toko = [x for x in (badan.get('toko') or []) if x]
                 n = inti.setel_tahap(folder, badan['tahap'],
-                                     (badan.get('catatan') or '').strip(), oleh)
-                catat('[tahap] {} folder ditandai "{}"'.format(n, badan['tahap']))
+                                     (badan.get('catatan') or '').strip(), oleh,
+                                     toko=toko,
+                                     daftar_toko=[x['folder_foto'] for x in cfg['toko']])
+                nama_toko = {x['folder_foto']: x['nama'] for x in cfg['toko']}
+                catat('[tahap] {} folder ditandai "{}" untuk {}'.format(
+                    n, badan['tahap'],
+                    ', '.join(nama_toko.get(x, x) for x in toko) if toko else 'semua toko'))
                 return self._kirim({'ok': True, 'jumlah': n})
             if self.path == '/api/pindai':
                 lapor = lapor_ke('ekspor')
