@@ -1194,6 +1194,24 @@ def setel_tahap(folder, tahap, catatan='', oleh=''):
     return n
 
 
+def _ganti_berkas(sementara, tujuan, coba=40):
+    """os.replace yang sabar menunggu pembaca berkas tujuan selesai.
+
+    Di Windows berkas yang sedang dibuka thread lain tidak bisa ditukar. Sejak
+    ekspor boleh berjalan bersamaan dengan unggahan, daftar R2 bisa sedang dibaca
+    ekspor tepat ketika unggahan hendak menulisnya — tanpa menunggu, unggahan
+    folder itu gagal padahal fotonya sudah terkirim.
+    """
+    for i in range(coba):
+        try:
+            os.replace(sementara, tujuan)
+            return
+        except PermissionError:
+            if i == coba - 1:
+                raise
+            time.sleep(0.25)
+
+
 def tulis_manifest_r2(cfg, kunci_url, ukuran=None):
     """Simpan daftar "kunci -> URL" ke berkas teks yang ikut git.
 
@@ -1206,11 +1224,13 @@ def tulis_manifest_r2(cfg, kunci_url, ukuran=None):
     # revisi sama dengan yang lama — tanpa menghubungi R2 dan tanpa kunci akses.
     ukuran = ukuran or {}
     os.makedirs(os.path.dirname(MANIFEST_R2), exist_ok=True)
-    with open(MANIFEST_R2, 'w', encoding='utf-8-sig', newline='') as f:
+    sementara = MANIFEST_R2 + '.tmp'
+    with open(sementara, 'w', encoding='utf-8-sig', newline='') as f:
         w = csv.writer(f)
         w.writerow(['path', 'url', 'ukuran'])
         for kunci, tautan in sorted(kunci_url.items()):
             w.writerow([kunci, tautan, ukuran.get(kunci, '')])
+    _ganti_berkas(sementara, MANIFEST_R2)
     return len(kunci_url)
 
 
@@ -1260,7 +1280,7 @@ def perbarui_manifest_r2(tambahan):
         w.writerow(['path', 'url', 'ukuran'])
         for jalur in sorted(baris):
             w.writerow([jalur, baris[jalur][0], baris[jalur][1]])
-    os.replace(sementara, MANIFEST_R2)
+    _ganti_berkas(sementara, MANIFEST_R2)
     return len(tambahan)
 
 

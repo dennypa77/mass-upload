@@ -23,7 +23,15 @@ import unggah as modul_unggah
 PORT = 8765
 LOG = []                      # seluruh baris log sejak server hidup
 KUNCI = threading.Lock()
-SIBUK = {'nama': None, 'tahap': None, 'n': 0, 'total': 0}
+# Pekerjaan latar dibagi ke dua jalur. Unggahan ratusan folder bisa makan
+# sehari, dan folder yang sudah selesai perlu bisa diekspor selama itu; di dalam
+# satu jalur tetap hanya satu pekerjaan sekaligus.
+SIBUK = {'unggah': {'nama': None, 'tahap': None, 'n': 0, 'total': 0},
+         'ekspor': {'nama': None, 'tahap': None, 'n': 0, 'total': 0}}
+KUNCI_LAJUR = threading.Lock()
+PENGALIH = {'n': 0, 'asli': None}   # berapa pekerjaan yang sedang mengalihkan print()
+VERSI_STATUS = [0]                  # naik tiap ada status folder yang dihitung ulang
+KUNCI_CACHE = threading.Lock()
 SINGGAHAN = {}                # cache hasil pemindaian folder
 BERKAS_CACHE = os.path.join(inti.AKAR, 'data', 'cache_folder.json')
 # Dinaikkan tiap kali isi hasil status_folder berubah bentuk, supaya cache lama
@@ -42,10 +50,15 @@ def muat_cache():
 
 
 def simpan_cache():
+    # Unggahan dan scan kini bisa menyimpan cache bersamaan: ditulis ke berkas
+    # sementara lalu ditukar, supaya tidak saling menimpa di tengah jalan.
     try:
         os.makedirs(os.path.dirname(BERKAS_CACHE), exist_ok=True)
-        with open(BERKAS_CACHE, 'w', encoding='utf-8') as f:
-            json.dump({'versi': VERSI_CACHE, 'folder': dict(SINGGAHAN)}, f)
+        with KUNCI_CACHE:
+            sementara = BERKAS_CACHE + '.tmp'
+            with open(sementara, 'w', encoding='utf-8') as f:
+                json.dump({'versi': VERSI_CACHE, 'folder': dict(SINGGAHAN)}, f)
+            os.replace(sementara, BERKAS_CACHE)
     except Exception:
         pass
 
@@ -66,27 +79,61 @@ class Aliran:
         pass
 
 
-def di_latar(nama, fungsi):
-    """Jalankan pekerjaan di thread lain sambil mengalihkan print() ke log."""
-    if SIBUK['nama']:
-        return False
+def sibuk_apa():
+    return any(v['nama'] for v in SIBUK.values())
+
+
+def lapor_ke(lajur):
+    return lambda tahap, n, total: SIBUK[lajur].update(tahap=tahap, n=n, total=total)
+
+
+def _alihkan(nyala):
+    # print() dialihkan ke log selama masih ada pekerjaan, dan baru dikembalikan
+    # setelah pekerjaan terakhir selesai. Dengan dua pekerjaan sekaligus,
+    # mengembalikannya waktu yang pertama selesai membuat log yang kedua hilang.
+    with KUNCI_LAJUR:
+        if nyala:
+            if PENGALIH['n'] == 0:
+                PENGALIH['asli'] = sys.stdout
+                sys.stdout = Aliran()
+            PENGALIH['n'] += 1
+        else:
+            PENGALIH['n'] -= 1
+            if PENGALIH['n'] == 0:
+                sys.stdout = PENGALIH['asli']
+
+
+def di_latar(nama, fungsi, lajur=('ekspor',)):
+    """Jalankan pekerjaan di thread lain sambil mengalihkan print() ke log.
+
+    lajur menentukan pekerjaan ini boleh berjalan bersama pekerjaan apa.
+    Unggahan memakai jalur "unggah", ekspor dan pemeriksaan memakai "ekspor",
+    jadi keduanya bisa jalan bersamaan. Pekerjaan yang mengubah data yang
+    dibaca keduanya — sinkron SKU, pembaruan tools — memakai kedua jalur.
+    """
+    lajur = tuple(lajur)
+    with KUNCI_LAJUR:
+        if any(SIBUK[x]['nama'] for x in lajur):
+            return False
+        for x in lajur:
+            SIBUK[x].update(nama=nama, tahap=None, n=0, total=0)
 
     def bungkus():
-        SIBUK.update(nama=nama, tahap=None, n=0, total=0)
-        asli = sys.stdout
-        sys.stdout = Aliran()
+        _alihkan(True)
         try:
             catat('\n' + '─' * 70)
             catat('>>> ' + nama.upper())
             fungsi()
-            catat('[selesai]')
+            catat('[selesai] ' + nama)
         except SystemExit as e:
             catat('[berhenti] {}'.format(e))
         except Exception:
             catat('[error] ' + traceback.format_exc())
         finally:
-            sys.stdout = asli
-            SIBUK.update(nama=None, tahap=None, n=0, total=0)
+            _alihkan(False)
+            with KUNCI_LAJUR:
+                for x in lajur:
+                    SIBUK[x].update(nama=None, tahap=None, n=0, total=0)
 
     threading.Thread(target=bungkus, daemon=True).start()
     return True
@@ -654,9 +701,14 @@ class Penangan(BaseHTTPRequestHandler):
             if jalur == '/api/log':
                 sejak = int(tanya.get('sejak', 0))
                 with KUNCI:
+                    aktif = [dict(v, lajur=k) for k, v in SIBUK.items() if v['nama']]
+                    utama = next((a for a in aktif if a['lajur'] == 'unggah'), None) \
+                        or (aktif[0] if aktif else {})
                     return self._kirim({'baris': LOG[sejak:], 'total': len(LOG),
-                                        'sibuk': SIBUK['nama'], 'tahap': SIBUK['tahap'],
-                                        'n': SIBUK['n'], 'total_maju': SIBUK['total']})
+                                        'sibuk': utama.get('nama'), 'tahap': utama.get('tahap'),
+                                        'n': utama.get('n', 0),
+                                        'total_maju': utama.get('total', 0),
+                                        'lajur': aktif, 'versi_status': VERSI_STATUS[0]})
         except Exception:
             return self._kirim({'galat': traceback.format_exc()}, kode=500)
         self._kirim('404', 'text/plain; charset=utf-8', 404)
@@ -692,23 +744,27 @@ class Penangan(BaseHTTPRequestHandler):
                 # berkas lama dilewati karena namanya sudah ada di R2
                 paksa = bool(badan.get('paksa'))
 
-                def lapor(tahap, n, total):
-                    SIBUK.update(tahap=tahap, n=n, total=total)
+                lapor = lapor_ke('unggah')
 
                 def kerja():
-                    modul_unggah.proses_banyak(inti, cfg, daftar, push=push,
-                                               lapor=lapor, paksa=paksa)
                     letak = {f['path']: (j['jenis'], f) for j in pohon(cfg) for f in j['folder']}
-                    for p in daftar:
+
+                    def selesai(p, hasil):
+                        # Dihitung ulang begitu folder ini rampung, supaya langsung
+                        # bisa dipilih untuk diekspor sementara folder lain berjalan.
                         SINGGAHAN.pop(p, None)
                         if p in letak:
                             jenis, f = letak[p]
                             s = status_folder(cfg, jenis, p, f['dari'], f['sampai'], segar=True)
                             print('[status] {:<28} {}'.format(f['nama'], s['label']))
-                    simpan_cache()
+                        VERSI_STATUS[0] += 1
+                        simpan_cache()
+
+                    modul_unggah.proses_banyak(inti, cfg, daftar, push=push, lapor=lapor,
+                                               paksa=paksa, selesai=selesai)
 
                 nama = 'unggah' if len(daftar) == 1 else 'unggah {} folder'.format(len(daftar))
-                return self._kirim({'mulai': di_latar(nama, kerja)})
+                return self._kirim({'mulai': di_latar(nama, kerja, lajur=('unggah',))})
             if self.path == '/api/perintah':
                 nama = badan['perintah']
 
@@ -720,7 +776,12 @@ class Penangan(BaseHTTPRequestHandler):
                         if not data:
                             print('[build] tidak ada SKU pada folder yang dipilih')
                             return
-                        inti.perintah_build(cfg, data, sub='pilihan' if lingkup else None)
+                        # Tiap ekspor cicilan ke foldernya sendiri. Tanpa itu cicilan
+                        # berikutnya menimpa berkas cicilan sebelumnya yang mungkin
+                        # belum sempat diupload ke Shopee.
+                        sub = os.path.join('pilihan', time.strftime('%Y-%m-%d %H.%M.%S')) \
+                            if lingkup else None
+                        inti.perintah_build(cfg, data, sub=sub)
                         # Sengaja tidak menandai apa pun sendiri: berkas Excel
                         # jadi bukan berarti Shopee menerimanya. Yang dilakukan
                         # cuma menyebutkan folder mana saja yang barusan ikut,
@@ -742,7 +803,9 @@ class Penangan(BaseHTTPRequestHandler):
                     elif nama == 'impor':
                         inti.perintah_impor(cfg, badan['sumber'])
                         SINGGAHAN.clear()
-                return self._kirim({'mulai': di_latar(nama, kerja)})
+                # impor menulis ulang daftar SKU yang dibaca unggahan dan ekspor
+                lajur = ('unggah', 'ekspor') if nama == 'impor' else ('ekspor',)
+                return self._kirim({'mulai': di_latar(nama, kerja, lajur=lajur)})
             if self.path == '/api/cek':
                 return self._kirim({'berkas': laporan_cek(cfg, badan.get('folders'))})
             if self.path == '/api/lingkup':
@@ -765,12 +828,12 @@ class Penangan(BaseHTTPRequestHandler):
                 jenis = badan.get('jenis') or None
                 return self._kirim({'mulai': di_latar(
                     'foto tambahan', lambda: modul_unggah.pasang_foto_tambahan(
-                        inti, cfg, toko, daftar, jenis, push=True))})
+                        inti, cfg, toko, daftar, jenis, push=True), lajur=('unggah',))})
             if self.path == '/api/hapus_tambahan':
                 toko, kunci = badan.get('toko'), badan.get('kunci')
                 return self._kirim({'mulai': di_latar(
                     'hapus foto tambahan', lambda: modul_unggah.hapus_foto_tambahan(
-                        inti, cfg, toko, kunci, push=True))})
+                        inti, cfg, toko, kunci, push=True), lajur=('unggah',))})
             if self.path == '/api/template':
                 berkas = dialog_berkas('Pilih template Shopee yang baru diunduh')
                 if not berkas:
@@ -781,7 +844,7 @@ class Penangan(BaseHTTPRequestHandler):
                 return self._kirim({'mulai': di_latar('segarkan daftar R2', lambda: (
                     modul_unggah.segarkan_manifest_r2(inti, cfg),
                     print('[daftar] commit data/foto_r2.csv supaya komputer yang '
-                          'tidak punya kunci R2 ikut memakainya')))})
+                          'tidak punya kunci R2 ikut memakainya')), lajur=('unggah',))})
             if self.path == '/api/r2':
                 lokal = inti.baca_lokal()
                 r = (lokal.get('penyimpanan') or {}).get('r2') or {}
@@ -813,7 +876,8 @@ class Penangan(BaseHTTPRequestHandler):
             if self.path == '/api/sinkron_sku':
                 return self._kirim({'mulai': di_latar(
                     'sinkron SKU', lambda: (inti.sinkron_sku(cfg, catat),
-                                            SINGGAHAN.clear(), simpan_cache()))})
+                                            SINGGAHAN.clear(), simpan_cache()),
+                    lajur=('unggah', 'ekspor'))})
             if self.path == '/api/tempel_sku':
                 catatan = inti.baca_tempelan(badan.get('teks') or '')
                 if badan.get('intip'):
@@ -828,14 +892,12 @@ class Penangan(BaseHTTPRequestHandler):
                 return self._kirim(hasil)
             if self.path == '/api/cek_gambar':
                 import cek_gambar
-                def lapor(tahap, n, total):
-                    SIBUK.update(tahap=tahap, n=n, total=total)
+                lapor = lapor_ke('ekspor')
                 return self._kirim({'mulai': di_latar(
                     'cek gambar', lambda: cek_gambar.periksa(inti, cfg, lapor=lapor))})
             if self.path == '/api/cek_ukuran':
                 import cek_gambar
-                def lapor(tahap, n, total):
-                    SIBUK.update(tahap=tahap, n=n, total=total)
+                lapor = lapor_ke('ekspor')
                 return self._kirim({'mulai': di_latar(
                     'cek ukuran', lambda: cek_gambar.periksa_ukuran(inti, cfg, lapor=lapor))})
             if self.path == '/api/tahap':
@@ -851,8 +913,7 @@ class Penangan(BaseHTTPRequestHandler):
                 catat('[tahap] {} folder ditandai "{}"'.format(n, badan['tahap']))
                 return self._kirim({'ok': True, 'jumlah': n})
             if self.path == '/api/pindai':
-                def lapor(tahap, n, total):
-                    SIBUK.update(tahap=tahap, n=n, total=total)
+                lapor = lapor_ke('ekspor')
                 return self._kirim({'mulai': di_latar(
                     'scan folder', lambda: pindai_semua(cfg, lapor))})
             if self.path == '/api/dashboard':
@@ -874,7 +935,8 @@ class Penangan(BaseHTTPRequestHandler):
                 import perbarui as modul_perbarui
                 if badan.get('pasang'):
                     return self._kirim({'mulai': di_latar(
-                        'perbarui', lambda: modul_perbarui.pasang(inti, catat))})
+                        'perbarui', lambda: modul_perbarui.pasang(inti, catat),
+                        lajur=('unggah', 'ekspor'))})
                 return self._kirim(modul_perbarui.periksa(inti))
             if self.path == '/api/buka':
                 peta = {'output': inti.DIR_OUT, 'foto': inti.DIR_FOTO,
@@ -995,7 +1057,7 @@ def awasi_kode(server):
     awal = _cap_kode()
     while True:
         time.sleep(1.5)
-        if _cap_kode() != awal and not SIBUK['nama']:
+        if _cap_kode() != awal and not sibuk_apa():
             print('[server] kode berubah, menjalankan ulang…')
             catat('[server] kode berubah, server dijalankan ulang')
             try:

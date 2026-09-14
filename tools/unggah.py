@@ -730,7 +730,8 @@ def proses(inti, cfg, folder, push=True, lapor=None, paksa=False):
             'alasan': None if berhasil == len(bagian) else 'sebagian bagian gagal terkirim'}
 
 
-def proses_banyak(inti, cfg, folder_daftar, push=True, lapor=None, paksa=False):
+def proses_banyak(inti, cfg, folder_daftar, push=True, lapor=None, paksa=False,
+                  selesai=None):
     """Proses beberapa folder produk berurutan, dengan ringkasan di akhir.
 
     Foldernya dikerjakan satu per satu, bukan bersamaan: tiap folder sendiri
@@ -743,7 +744,10 @@ def proses_banyak(inti, cfg, folder_daftar, push=True, lapor=None, paksa=False):
         print('[unggah] tidak ada folder yang dipilih')
         return
     if total == 1:
-        return proses(inti, cfg, folder_daftar[0], push=push, lapor=lapor, paksa=paksa)
+        r = proses(inti, cfg, folder_daftar[0], push=push, lapor=lapor, paksa=paksa)
+        if selesai:
+            selesai(folder_daftar[0], r)
+        return r
 
     print('[unggah] {} folder akan diproses berurutan:'.format(total))
     for i, f in enumerate(folder_daftar, 1):
@@ -767,6 +771,14 @@ def proses_banyak(inti, cfg, folder_daftar, push=True, lapor=None, paksa=False):
             print('   ! folder ini gagal: {}'.format(e))
             r = {'ok': False, 'alasan': str(e), 'foto': 0}
         hasil.append((folder, r or {'ok': False, 'alasan': 'tidak ada hasil', 'foto': 0}))
+        # Status folder ini dihitung ulang begitu selesai, bukan menunggu seluruh
+        # daftar rampung — unggahan ratusan folder bisa makan sehari, dan folder
+        # yang sudah siap perlu bisa diekspor sementara sisanya masih berjalan.
+        if selesai:
+            try:
+                selesai(folder, hasil[-1][1])
+            except Exception as e:
+                print('   ! status folder ini gagal diperbarui: {}'.format(e))
 
     print('')
     print('=' * 70)

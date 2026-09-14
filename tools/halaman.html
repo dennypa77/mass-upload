@@ -536,8 +536,13 @@ tr.rinci li{margin:2px 0}
         besar, kecilkan angka di atas lalu buat ulang; kalau ternyata sanggup lebih banyak,
         naikkan supaya berkasnya tidak sebanyak itu.
         <br><br>Kalau ada folder yang
-        dipilih di langkah 1, hasilnya ditulis ke <code>output/pilihan/</code> supaya tidak
+        dipilih di langkah 1, hasilnya ditulis ke folder baru bertanggal di
+        <code>output/pilihan/</code>, jadi ekspor cicilan tidak saling menimpa dan tidak
         menimpa hasil lengkap di <code>output/</code>.
+        <br><br><b>Ekspor boleh dijalankan sambil unggahan berjalan.</b> Status folder
+        diperbarui satu per satu begitu folder itu selesai diunggah — pilih yang sudah
+        <b>sudah di R2 · siap listing</b> (saring status di tab 1, lalu centang semua yang
+        tampil).
         <br><br>Di Seller Centre Shopee: <b>Produk → Mass Upload → Upload berkas</b>, lalu
         pilih berkas milik toko yang bersangkutan. Ingat tiap berkas hanya untuk satu toko
         dan satu cabang kategori.
@@ -611,7 +616,7 @@ function gambarBilah(){
 
   const r=$('#ringkasEkspor');
   if(r)r.innerHTML=n
-    ? `Akan diekspor: <b>${n} folder terpilih</b>. Hasil ditulis ke <code>output/pilihan/</code>.`
+    ? `Akan diekspor: <b>${n} folder terpilih</b>. Hasil ditulis ke folder bertanggal di <code>output/pilihan/</code>.`
     : 'Tidak ada folder dipilih \u2014 <b>seluruh data</b> diekspor ke <code>output/</code>.';
 }
 function kosongkanPilihan(){
@@ -1236,6 +1241,20 @@ function gambarTahap(tr,tahap,waktu){
     : `<span class="tanda ${kelas}" title="${waktu||''}">${teks}</span>`;
 }
 
+// Selama unggahan panjang, status folder yang baru selesai diperbarui per baris,
+// tanpa menggambar ulang seluruh tabel — supaya gulungan dan centang tidak
+// lompat saat sedang memilih folder yang mau diekspor.
+function segarkanStatusBaris(){
+  api('/api/singgahan').then(c=>{
+    const f=(c&&c.folder)||{};
+    document.querySelectorAll('tr.folder').forEach(tr=>{
+      const s=f[tr.dataset.path];
+      if(s&&tr.dataset.status!==JSON.stringify(s))pasangStatus(tr,s);
+    });
+    saring();
+  }).catch(()=>{});
+}
+
 function pasangStatus(tr,s){
   tr.dataset.status=JSON.stringify(s);
   tr.querySelector('[data-k=foto]').textContent=s.foto?s.foto+' foto':'—';
@@ -1620,12 +1639,25 @@ setInterval(()=>{
       });
       sejak=d.total; if(bawah)el.scrollTop=el.scrollHeight;
     }
-    $('#tahap').textContent=d.sibuk
-      ? `— ${d.sibuk}${d.tahap?`: ${d.tahap} ${d.n}/${d.total_maju}`
-        +(d.total_maju?` (${Math.round(d.n/d.total_maju*100)}%)`:''):''}` : '';
+    // Unggah dan ekspor bisa berjalan bersamaan; keduanya ditulis.
+    const lajur=d.lajur||(d.sibuk?[{nama:d.sibuk,tahap:d.tahap,n:d.n,total:d.total_maju}]:[]);
+    $('#tahap').textContent=lajur.length
+      ? '— '+lajur.map(x=>x.nama+(x.tahap?`: ${x.tahap} ${x.n}/${x.total}`
+          +(x.total?` (${Math.round(x.n/x.total*100)}%)`:''):'')).join('   |   ')
+      : '';
     $('#barKerja').style.width=(d.sibuk&&d.total_maju?d.n/d.total_maju*100:0)+'%';
-    if(!d.sibuk&&window._tadiSibuk){muatStatus();muatDasbor();muatPohon();}
-    window._tadiSibuk=!!d.sibuk;
+    const jejak=lajur.map(x=>x.nama).join('|');
+    if(window._jejakKerja!==undefined&&jejak!==window._jejakKerja){
+      muatStatus();muatDasbor();
+      // tabel digambar ulang hanya kalau semua pekerjaan sudah selesai, supaya
+      // gulungan dan centang tidak lompat di tengah unggahan panjang
+      if(!lajur.length)muatPohon();
+    }
+    window._jejakKerja=jejak;
+    if(d.versi_status!==undefined&&d.versi_status!==window._versiStatus){
+      if(window._versiStatus!==undefined){segarkanStatusBaris();muatDasbor();}
+      window._versiStatus=d.versi_status;
+    }
   }).catch(()=>{});
 },700);
 
