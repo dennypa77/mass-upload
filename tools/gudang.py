@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS foto (
     PRIMARY KEY (toko, kunci)
 );
 CREATE INDEX IF NOT EXISTS idx_foto_seri ON foto (jenis, seri);
+CREATE INDEX IF NOT EXISTS idx_foto_path ON foto (path_repo);
 """
 
 KOLOM = ['toko', 'kunci', 'nama_toko', 'jenis', 'seri', 'tipe', 'sumber',
@@ -114,6 +115,22 @@ def peta_url(db, hanya_terunggah=True):
     for r in db.execute(sql):
         hasil.setdefault(r['toko'], {})[r['kunci'].upper()] = r['url']
     return hasil
+
+
+def luruskan_terunggah(db, ada_di_r2):
+    """Tandai terunggah baris yang fotonya ternyata ada di R2; kembalikan jumlahnya.
+
+    Hanya baris yang belum bertanda yang diperiksa, dan dicocokkan di Python.
+    Dulu seluruh isi bucket dikirim sebagai 129 ribu UPDATE ke tabel tanpa indeks
+    path, jadi tiap UPDATE membaca seluruh tabel: langkah yang seharusnya sekejap
+    ini memakan 8 menit sambil menahan tanda sibuk, dan Export terus ditolak.
+    """
+    belum = [r[0] for r in db.execute(
+        'SELECT path_repo FROM foto WHERE diunggah = 0 AND path_repo IS NOT NULL')]
+    cocok = [p for p in belum if p in ada_di_r2]
+    if cocok:
+        tandai_terunggah(db, cocok)
+    return len(cocok)
 
 
 def sudah_terunggah(db):

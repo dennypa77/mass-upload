@@ -1231,6 +1231,39 @@ def ukuran_manifest_r2(_ingatan={}):
     return hasil
 
 
+def perbarui_manifest_r2(tambahan):
+    """Masukkan objek yang barusan diunggah ke daftar bersama, tanpa membaca bucket.
+
+    tambahan = {path: (url, ukuran)}. Membaca ulang seluruh isi bucket sesudah
+    tiap unggahan makan 1 sampai 8 menit, dan selama itu tools menolak pekerjaan
+    lain. Padahal yang berubah hanya foto yang barusan dikirim, dan path, URL,
+    serta ukurannya sudah diketahui. Unggahan dari komputer lain tetap masuk
+    lewat tombol "Segarkan daftar foto".
+
+    Ditulis ke berkas sementara lalu ditukar, supaya scan status yang sedang
+    membaca tidak pernah melihat berkas yang setengah jadi.
+    """
+    if not tambahan:
+        return 0
+    baris = {}
+    if os.path.exists(MANIFEST_R2):
+        with open(MANIFEST_R2, encoding='utf-8-sig', newline='') as f:
+            for r in csv.DictReader(f):
+                if r.get('path'):
+                    baris[r['path']] = (r.get('url') or '', r.get('ukuran') or '')
+    for jalur, (tautan, ukuran) in tambahan.items():
+        baris[jalur] = (tautan, '' if ukuran is None else ukuran)
+    os.makedirs(os.path.dirname(MANIFEST_R2), exist_ok=True)
+    sementara = MANIFEST_R2 + '.tmp'
+    with open(sementara, 'w', encoding='utf-8-sig', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['path', 'url', 'ukuran'])
+        for jalur in sorted(baris):
+            w.writerow([jalur, baris[jalur][0], baris[jalur][1]])
+    os.replace(sementara, MANIFEST_R2)
+    return len(tambahan)
+
+
 def jalur_manifest_r2():
     """Kumpulan path yang tercatat sudah ada di bucket, apa pun yang mengunggah.
 

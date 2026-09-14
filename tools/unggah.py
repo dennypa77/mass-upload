@@ -406,9 +406,7 @@ def segarkan_manifest_r2(inti, cfg, cetak=print):
     if os.path.exists(inti.DB_PATH):
         db = gudang.buka(inti.DB_PATH)
         try:
-            sebelum_db = gudang.jumlah(db)[1]
-            gudang.tandai_terunggah(db, list(semua))
-            selisih = gudang.jumlah(db)[1] - sebelum_db
+            selisih = gudang.luruskan_terunggah(db, semua)
         finally:
             db.close()
         if selisih:
@@ -506,6 +504,10 @@ def kirim_r2(inti, cfg, db, temuan, maju, paksa=False):
     if berhasil:
         gudang.simpan(db, berhasil)
         gudang.tandai_terunggah(db, [t['path_repo'] for t in berhasil])
+        # Daftar bersama cukup ditambah foto yang barusan dikirim. Membaca ulang
+        # seluruh bucket makan menit, dan selama itu Export ditolak.
+        inti.perbarui_manifest_r2(
+            {t['path_repo']: (t['url'], t.get('ukuran')) for t in berhasil})
     print('[3/3] {} terkirim, {} gagal'.format(len(berhasil), hitung['gagal']))
     return len(berhasil)
 
@@ -741,10 +743,7 @@ def proses_banyak(inti, cfg, folder_daftar, push=True, lapor=None, paksa=False):
         print('[unggah] tidak ada folder yang dipilih')
         return
     if total == 1:
-        r = proses(inti, cfg, folder_daftar[0], push=push, lapor=lapor, paksa=paksa)
-        if push and (r or {}).get('terkirim'):
-            segarkan_manifest_r2(inti, cfg)
-        return r
+        return proses(inti, cfg, folder_daftar[0], push=push, lapor=lapor, paksa=paksa)
 
     print('[unggah] {} folder akan diproses berurutan:'.format(total))
     for i, f in enumerate(folder_daftar, 1):
@@ -785,10 +784,6 @@ def proses_banyak(inti, cfg, folder_daftar, push=True, lapor=None, paksa=False):
     if n_ok < total:
         print('   Folder yang gagal bisa dijalankan ulang; yang sudah berhasil '
               'tidak akan disalin ulang.')
-    # Sekali saja di akhir, bukan tiap folder: membaca isi bucket yang berisi
-    # ratusan ribu foto makan lebih dari satu menit.
-    if push and n_kirim:
-        segarkan_manifest_r2(inti, cfg)
     return {'ok': n_ok == total, 'folder': total, 'berhasil': n_ok, 'foto': n_foto}
 
 
