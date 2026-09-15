@@ -32,6 +32,9 @@ KUNCI_LAJUR = threading.Lock()
 PENGALIH = {'n': 0, 'asli': None}   # berapa pekerjaan yang sedang mengalihkan print()
 VERSI_STATUS = [0]                  # naik tiap ada status folder yang dihitung ulang
 KUNCI_CACHE = threading.Lock()
+# Hasil pemasangan template terakhir. Baris log "dipasang" mudah tenggelam di
+# antara ribuan baris log unggahan, jadi hasilnya juga ditampilkan di kartunya.
+HASIL_TEMPLATE = {}
 SINGGAHAN = {}                # cache hasil pemindaian folder
 BERKAS_CACHE = os.path.join(inti.AKAR, 'data', 'cache_folder.json')
 # Dinaikkan tiap kali isi hasil status_folder berubah bentuk, supaya cache lama
@@ -859,8 +862,32 @@ class Penangan(BaseHTTPRequestHandler):
                 berkas = dialog_berkas('Pilih template Shopee yang baru diunduh')
                 if not berkas:
                     return self._kirim({'batal': True})
-                return self._kirim({'mulai': di_latar(
-                    'pasang template', lambda: inti.pasang_template(cfg, berkas))})
+                # penanda percobaan ini, supaya halaman tidak keliru menampilkan
+                # hasil pemasangan sebelumnya — yang bisa saja berkasnya sama
+                percobaan = '{:.3f}'.format(time.time())
+
+                def kerja():
+                    hasil = {'id': percobaan, 'ok': False, 'sedang': False,
+                             'waktu': time.strftime('%Y-%m-%d %H:%M'),
+                             'berkas': os.path.basename(berkas), 'kunci': None,
+                             'sama': False, 'tanda': '', 'tanda_lama': '', 'pesan': ''}
+                    HASIL_TEMPLATE.clear()
+                    HASIL_TEMPLATE.update(hasil, sedang=True)
+                    try:
+                        r = inti.pasang_template(cfg, berkas)
+                        hasil.update(ok=True, kunci=r['kunci'], waktu=r['waktu'],
+                                     sama=r['sama_dengan_sebelumnya'],
+                                     tanda=(r['tanda'] or '')[:8],
+                                     tanda_lama=(r['tanda_lama'] or '')[:8])
+                    except BaseException as e:
+                        hasil['pesan'] = str(e)
+                        raise
+                    finally:
+                        HASIL_TEMPLATE.clear()
+                        HASIL_TEMPLATE.update(hasil)
+
+                return self._kirim({'mulai': di_latar('pasang template', kerja),
+                                    'id': percobaan, 'berkas': os.path.basename(berkas)})
             if self.path == '/api/segarkan_r2':
                 return self._kirim({'mulai': di_latar('segarkan daftar R2', lambda: (
                     modul_unggah.segarkan_manifest_r2(inti, cfg),
@@ -1044,6 +1071,7 @@ class Penangan(BaseHTTPRequestHandler):
                            'ada_semua': [os.path.isdir(p) for p in semua]})
         return {'akar': inti.AKAR, 'root_drive': cfg['foto'].get('root'), 'sumber': sumber,
                 'template': inti.info_template(cfg),
+                'hasil_template': dict(HASIL_TEMPLATE) or None,
                 'tambahan': daftar_tambahan(cfg),
                 'base_url': cfg['foto'].get('base_url') or '',
                 'toko': cfg['toko'], 'sku': sku, 'db': n_db, 'unggah': n_unggah,

@@ -375,6 +375,7 @@ tr.rinci li{margin:2px 0}
       <div class="kartu">
         <h2>Template Shopee</h2>
         <div class="isi">
+          <div id="hasilTemplate"></div>
           <div id="daftarTemplate"></div>
           <div class="baris" style="margin-top:10px">
             <button class="utama" onclick="pasangTemplate()">Pasang template baru…</button>
@@ -808,7 +809,7 @@ function muatStatus(){
     $('#akar').textContent=s.akar;
     if(document.activeElement!==$('#baseurl')) $('#baseurl').value=s.base_url;
     if(s.sumber&&document.activeElement.className!=='jalurSumber') gambarSumber(s.sumber);
-    if(s.template)gambarTemplate(s.template);
+    if(s.template)gambarTemplate(s.template,s.hasil_template);
     if(s.toko&&!TOKO.length){
       TOKO=s.toko;
       gambarBilah();
@@ -1049,9 +1050,10 @@ function pasangTambahan(toko){
   });
 }
 
-function gambarTemplate(daftar){
+function gambarTemplate(daftar,hasil){
   $('#daftarTemplate').innerHTML='<table><thead><tr><th>Template</th><th>Kategori</th>'
-   +'<th title="Umur berkas. Template lama sering ditolak Shopee">Umur</th>'
+   +'<th title="Kapan template ini terakhir dipasang lewat tools, dari berkas apa, dan di komputer mana">Terakhir diperbarui</th>'
+   +'<th title="Umur berkas unduhan. Template lama sering ditolak Shopee">Umur</th>'
    +'<th>Dipakai</th><th>Status</th></tr></thead><tbody>'
    +daftar.map(t=>{
       let tanda='<span class="tanda t-siap">ok</span>';
@@ -1059,18 +1061,61 @@ function gambarTemplate(daftar){
       else if(t.kategori_hilang.length)
         tanda='<span class="tanda t-tanpasku">kategori tidak cocok</span>';
       else if(t.umur_hari>30)tanda='<span class="tanda t-baru">mungkin usang</span>';
-      return `<tr><td>${t.kunci}<div class="redup kecil">${t.path}</div></td>
+      const p=t.terpasang;
+      const kapan=!t.ada?'—'
+        :p?`<b>${p.waktu}</b><div class="redup kecil">${p.berkas||''}${p.oleh?' · '+p.oleh:''}</div>`
+        :`<span class="redup">belum pernah dipasang lewat tools</span>
+           <div class="redup kecil">tanggal berkas: ${t.waktu_berkas||'—'}</div>`;
+      return `<tr><td>${t.kunci}<div class="redup kecil">${t.path}${t.tanda?' · tanda '+t.tanda:''}</div></td>
         <td class="angka">${t.kategori}</td>
+        <td>${kapan}</td>
         <td class="angka">${t.umur_hari===null?'—':t.umur_hari+' hari'}</td>
         <td class="kecil">${t.dipakai.join(', ')}</td>
         <td>${tanda}</td></tr>`;
    }).join('')+'</tbody></table>';
+  gambarHasilTemplate(hasil);
+}
+
+// Hasil pemasangan terakhir ditampilkan di atas tabel: baris log-nya mudah
+// tenggelam di antara ribuan baris log unggahan, dan tabel saja tidak
+// menunjukkan apakah pemasangan barusan benar-benar mengubah sesuatu.
+function gambarHasilTemplate(hasil){
+  const kotak=$('#hasilTemplate');
+  if(!kotak)return;
+  if(!hasil){kotak.innerHTML='';return;}
+  let warna, isi;
+  if(hasil.sedang){
+    warna='var(--biru)';
+    isi=`Memasang <b>${hasil.berkas||'template'}</b>…`;
+  }else if(hasil.ok&&!hasil.sama){
+    warna='var(--hijau)';
+    isi=`<span style="color:var(--hijau)">✓</span> <b>Template ${hasil.kunci} berhasil diperbarui</b> — ${hasil.waktu}
+      <div class="kecil redup">dari ${hasil.berkas} · tanda ${hasil.tanda_lama||'—'} → ${hasil.tanda||'—'}</div>`;
+  }else if(hasil.ok){
+    warna='var(--kuning)';
+    isi=`<span style="color:var(--kuning)">⚠</span> <b>Template ${hasil.kunci} dipasang, tapi isinya sama persis dengan yang lama</b> — ${hasil.waktu}
+      <div class="kecil redup">Tidak ada yang berubah. Unduh ulang template dari Seller Centre untuk mendapat versi baru.</div>`;
+  }else{
+    warna='var(--merah)';
+    isi=`<span style="color:var(--merah)">✗</span> <b>Gagal memasang ${hasil.berkas||'template'}</b> — ${hasil.waktu}
+      <div class="kecil">${(hasil.pesan||'lihat log').replace(/</g,'&lt;')}</div>`;
+  }
+  kotak.innerHTML=`<div style="border-left:3px solid ${warna};padding:8px 12px;margin-bottom:10px">${isi}</div>`;
 }
 
 function pasangTemplate(){
   api('/api/template',{}).then(r=>{
     if(r.batal)return;
-    if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');
+    if(!r.mulai){alert('Masih ada pekerjaan lain yang berjalan.');return;}
+    gambarHasilTemplate({sedang:true,berkas:r.berkas});
+    // tunggu sampai hasil percobaan ini sendiri yang selesai, bukan hasil lama
+    let sisa=80;
+    const tunggu=()=>api('/api/status').then(s=>{
+      const h=s.hasil_template;
+      if(h&&h.id===r.id&&!h.sedang){gambarTemplate(s.template||[],h);return;}
+      if(--sisa>0)setTimeout(tunggu,1500);
+    }).catch(()=>{if(--sisa>0)setTimeout(tunggu,1500);});
+    setTimeout(tunggu,1000);
   });
 }
 

@@ -186,22 +186,82 @@ def kategori_template(path):
         wb.close()
 
 
+INFO_TEMPLATE = os.path.join(AKAR, 'template', 'info.json')
+
+
+def tanda_template(path):
+    """{'tanda': ..., 'sha256': ...} penanda versi sebuah berkas template.
+
+    Shopee memberi tiap unduhan template tanda tangan sendiri di sheet Template,
+    baris 2 kolom B, dan tanda itulah yang diperiksa waktu berkas diupload —
+    template lama ditolak dengan pesan "harus menggunakan template terbaru".
+    """
+    import hashlib
+    hasil = {'tanda': '', 'sha256': ''}
+    try:
+        with open(path, 'rb') as f:
+            hasil['sha256'] = hashlib.sha256(f.read()).hexdigest()
+    except OSError:
+        return hasil
+    try:
+        wb = openpyxl.load_workbook(path, read_only=True)
+        try:
+            if 'Template' in wb.sheetnames:
+                baris = next(wb['Template'].iter_rows(min_row=2, max_row=2, min_col=2,
+                                                      max_col=2, values_only=True), (None,))
+                hasil['tanda'] = str(baris[0] or '').strip()
+        finally:
+            wb.close()
+    except Exception:
+        pass
+    return hasil
+
+
+def baca_info_template():
+    """Catatan pemasangan template: {kunci: {waktu, berkas, oleh, sha256, tanda, ...}}."""
+    try:
+        with open(INFO_TEMPLATE, encoding='utf-8') as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def tulis_info_template(info):
+    # Ditaruh di sebelah template dan ikut git, supaya komputer lain juga tahu
+    # kapan template bersama itu terakhir diperbarui.
+    os.makedirs(os.path.dirname(INFO_TEMPLATE), exist_ok=True)
+    with open(INFO_TEMPLATE, 'w', encoding='utf-8') as f:
+        json.dump(info, f, ensure_ascii=False, indent=2)
+
+
 def info_template(cfg):
-    """Keterangan tiap template yang terpasang: umur berkas, kategori, dan
-    apakah kategori yang dipakai di config benar-benar ada di dalamnya."""
+    """Keterangan tiap template yang terpasang: umur berkas, kategori, kapan
+    terakhir diperbarui, dan apakah kategori yang dipakai di config benar-benar
+    ada di dalamnya."""
     dipakai = {}
     for jenis, j in cfg['jenis'].items():
         dipakai.setdefault(j['template'], []).append((jenis, j['kategori']))
+    catatan = baca_info_template()
     hasil = []
     for kunci, path in cfg['template'].items():
         penuh = os.path.join(AKAR, path)
         ada = os.path.exists(penuh)
         daftar = kategori_template(penuh) if ada else []
         kurang = [k for _, k in dipakai.get(kunci, []) if k not in daftar]
+        tanda = tanda_template(penuh) if ada else {'tanda': '', 'sha256': ''}
+        # Catatan pemasangan hanya dipercaya kalau masih cocok dengan berkasnya:
+        # berkas template bisa berganti lewat git tanpa catatannya ikut berganti.
+        rekam = catatan.get(kunci) or {}
+        cocok = bool(rekam.get('sha256')) and rekam.get('sha256') == tanda['sha256']
         hasil.append({
             'kunci': kunci, 'path': path, 'ada': ada,
             'kategori': len(daftar),
             'umur_hari': round((time.time() - os.path.getmtime(penuh)) / 86400, 1) if ada else None,
+            'waktu_berkas': time.strftime('%Y-%m-%d %H:%M',
+                                          time.localtime(os.path.getmtime(penuh))) if ada else None,
+            'tanda': tanda['tanda'][:8],
+            'terpasang': {k: rekam.get(k) for k in ('waktu', 'berkas', 'oleh', 'tanda_lama',
+                                                    'sama_dengan_sebelumnya')} if cocok else None,
             'dipakai': [x[0] for x in dipakai.get(kunci, [])],
             'kategori_hilang': kurang,
         })
@@ -241,17 +301,39 @@ def pasang_template(cfg, berkas):
     kunci = cocok.pop()
     tujuan = os.path.join(AKAR, cfg['template'][kunci])
     os.makedirs(os.path.dirname(tujuan), exist_ok=True)
+    baru = tanda_template(berkas)
+    lama = tanda_template(tujuan) if os.path.exists(tujuan) else {'tanda': '', 'sha256': ''}
+    # Memasang unduhan yang sama dua kali terlihat seperti pembaruan padahal
+    # tidak ada yang berubah — dan Shopee tetap menolaknya kalau versinya usang.
+    sama = (bool(baru['sha256']) and baru['sha256'] == lama['sha256']) or \
+           (bool(baru['tanda']) and baru['tanda'] == lama['tanda'])
     if os.path.exists(tujuan):
         cadangan = tujuan + '.bak'
         shutil.copy2(tujuan, cadangan)
         print('[template] versi lama dicadangkan ke {}'.format(os.path.basename(cadangan)))
     shutil.copy2(berkas, tujuan)
+    waktu = time.strftime('%Y-%m-%d %H:%M')
+    info = baca_info_template()
+    info[kunci] = {'waktu': waktu, 'berkas': os.path.basename(berkas),
+                   'oleh': os.environ.get('COMPUTERNAME') or '',
+                   'sha256': baru['sha256'], 'tanda': baru['tanda'],
+                   'tanda_lama': lama['tanda'], 'kategori': len(daftar),
+                   'sama_dengan_sebelumnya': sama}
+    tulis_info_template(info)
     print('[template] "{}" dipasang sebagai template {}'.format(
         os.path.basename(berkas), kunci))
     print('[template] {} kategori didukung, dipakai oleh: {}'.format(
         len(daftar),
         ', '.join(j for j, x in cfg['jenis'].items() if x['template'] == kunci)))
-    return kunci
+    if sama:
+        print('[template] PERHATIAN: isinya sama persis dengan template yang sudah terpasang, '
+              'tidak ada yang berubah. Unduh ulang dari Seller Centre untuk versi baru.')
+    else:
+        print('[template] BERHASIL: template {} diperbarui {} (tanda {} -> {})'.format(
+            kunci, waktu, (lama['tanda'] or '-')[:8], (baru['tanda'] or '-')[:8]))
+    return {'kunci': kunci, 'waktu': waktu, 'berkas': os.path.basename(berkas),
+            'tanda': baru['tanda'], 'tanda_lama': lama['tanda'],
+            'sama_dengan_sebelumnya': sama, 'kategori': len(daftar)}
 
 
 def saring_lingkup(data, lingkup):
