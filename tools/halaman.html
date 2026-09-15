@@ -118,6 +118,10 @@ tr.rinci li{margin:2px 0}
                  style="flex:1;max-width:260px" oninput="saring()">
           <label class="centang kecil"><input type="checkbox" id="hanyaFoto" onchange="saring()">
             hanya yang ada fotonya <span class="redup" id="jumlahTanpaFoto"></span></label>
+          <span class="kecil redup">jenis:</span>
+          <select id="saringJenis" class="pilihan" onchange="saring()">
+            <option value="">Semua</option>
+          </select>
           <span class="kecil redup">status:</span>
           <select id="saringStatus" class="pilihan" onchange="saring()">
             <option value="">Semua</option>
@@ -590,6 +594,7 @@ function daftarLingkup(){
 }
 function gambarBilah(){
   const n=dipilih.size;
+  perbaruiCentangJenis();
   if(!n){$('#isiPilihan').innerHTML='<span class="redup">belum ada — pilih di tab '
     +'\u201c1. Folder Produk\u201d. Tanpa pilihan, seluruh data yang diproses.</span>';}
   else{
@@ -603,7 +608,9 @@ function gambarBilah(){
     ? `<span class="redup">Belum ada folder yang dicentang. Centang kotak di kolom
         paling kiri tabel — bisa lebih dari satu, dan pilihannya terbawa sampai
         tab Export.</span>`
-    : `<div><b>${n} folder</b> dicentang
+    : `<div><b>${n} folder</b> dicentang <span class="kecil">(${
+         Object.entries([...dipilih.values()].reduce((a,f)=>(a[f.jenis]=(a[f.jenis]||0)+1,a),{}))
+           .map(([k,v])=>k+' '+v).join(' · ')})</span>
          <span class="redup kecil">· ${[...dipilih.values()].map(f=>f.nama.replace('PRODUK ','')).slice(0,4).join(', ')}${n>4?` +${n-4} lagi`:''}</span></div>
        <div class="baris" style="margin-top:10px">
          <label class="centang kecil"><input type="checkbox" id="pushBanyak" checked>
@@ -646,6 +653,37 @@ function ubahCentang(kotak,tr){
       {jenis:d.jenis,nama:d.nama,dari:+d.dari,sampai:+d.sampai,path:d.path});
   else dipilih.delete(d.path);
   gambarBilah();
+}
+// Centang atau lepas semua folder satu jenis yang lolos saringan — termasuk
+// yang barisnya sedang ditutup — mis. untuk mengerjakan JIBBITZ lebih dulu.
+function centangJenis(th,nyala){
+  let anak=th.nextElementSibling;
+  while(anak&&anak.classList.contains('folder')){
+    if(anak.dataset.lolos!=='0'){
+      const c=anak.querySelector('.centangFolder');
+      if(c&&c.checked!==nyala){c.checked=nyala;ubahCentang(c,anak);}
+    }
+    anak=anak.nextElementSibling;
+  }
+}
+// Kotak di judul jenis mencerminkan pilihan: penuh, sebagian, atau kosong.
+function perbaruiCentangJenis(){
+  document.querySelectorAll('tr.jenis').forEach(th=>{
+    const kotak=th.querySelector('.centangJenis');
+    if(!kotak)return;
+    let lolos=0, dicentang=0, anak=th.nextElementSibling;
+    while(anak&&anak.classList.contains('folder')){
+      if(anak.dataset.lolos!=='0'){
+        lolos++;
+        if(dipilih.has(anak.dataset.path))dicentang++;
+      }
+      anak=anak.nextElementSibling;
+    }
+    kotak.checked=lolos>0&&dicentang===lolos;
+    kotak.indeterminate=dicentang>0&&dicentang<lolos;
+    const info=th.querySelector('.infoCentang');
+    if(info)info.textContent=dicentang?dicentang+' dicentang':'';
+  });
 }
 function centangTampak(nyala){
   document.querySelectorAll('tr.folder').forEach(tr=>{
@@ -1409,14 +1447,27 @@ function muatPohon(){
     const sebelumnya=SERVER_TAHAP_TOKO;
     SERVER_TAHAP_TOKO=!contohFolder||('tahap_toko' in contohFolder);
     if(sebelumnya!==SERVER_TAHAP_TOKO)gambarBilah();
+    const pilihJenis=$('#saringJenis');
+    if(pilihJenis){
+      const tadi=pilihJenis.value;
+      pilihJenis.innerHTML='<option value="">Semua</option>'
+        +(d.jenis||[]).map(j=>`<option value="${j.jenis}">${j.jenis}</option>`).join('');
+      pilihJenis.value=(d.jenis||[]).some(j=>j.jenis===tadi)?tadi:'';
+    }
     const tb=$('#pohon tbody'); tb.innerHTML=''; let total=0;
     d.jenis.forEach((j,idx)=>{
       const th=document.createElement('tr'); th.className='jenis';
-      th.innerHTML=`<td colspan="7">
+      th.dataset.jenis=j.jenis;
+      th.innerHTML=`<td class="pilihkotak"><input type="checkbox" class="centangJenis"
+          title="Centang semua folder ${j.jenis} yang lolos saringan"></td><td colspan="7">
         <span class="panah">▾</span><span class="ikon">🗂️</span><b>${j.jenis}</b>
         <span class="redup" style="font-weight:400">— ${j.folder.length} folder</span>
         ${j.ada?'':'<span class="tanda t-tanpasku">folder sumber tidak ditemukan</span>'}
-        <span class="redup kecil" style="margin-left:10px">${j.akar}</span></td>`;
+        <span class="redup kecil" style="margin-left:10px">${j.akar}</span>
+        <span class="kecil infoCentang" style="margin-left:10px;color:var(--biru)"></span></td>`;
+      const kotakJenis=th.querySelector('.centangJenis');
+      // mencentang tidak ikut membuka/menutup kelompoknya
+      kotakJenis.onclick=e=>{e.stopPropagation();centangJenis(th,kotakJenis.checked);};
       th.onclick=()=>{
         const buka=th.dataset.buka!=='0'; th.dataset.buka=buka?'0':'1';
         th.querySelector('.panah').textContent=buka?'▸':'▾';
@@ -1495,9 +1546,12 @@ function saring(){
   const hanya=$('#hanyaFoto').checked;
   const status=$('#saringStatus').value;
   const tahap=$('#saringTahap').value;
+  const jenisSaring=($('#saringJenis')||{}).value||'';
   let tampak=0, menunggu=0, tersembunyi=0, tanpaFoto=0;
   document.querySelectorAll('tr.jenis').forEach(th=>{
     const buka=th.dataset.buka!=='0';
+    // jenis lain disembunyikan seluruhnya, termasuk judulnya
+    th.style.display=jenisSaring&&th.dataset.jenis!==jenisSaring?'none':'';
     let anak=th.nextElementSibling;
     while(anak&&anak.classList.contains('folder')){
       const s=anak.dataset.status?JSON.parse(anak.dataset.status):null;
@@ -1512,16 +1566,19 @@ function saring(){
       if(lolos&&hanya&&s) lolos=!!s.foto;
       if(lolos&&status&&s) lolos=s.keadaan===status;
       if(lolos&&tahap) lolos=cocokTahap(anak,tahap);
+      if(lolos&&jenisSaring) lolos=anak.dataset.jenis===jenisSaring;
       if(lolos&&!s&&(hanya||status)) menunggu++;
       if(!lolos) tersembunyi++;
       // Baris di bawah judul jenis yang sedang ditutup ikut disembunyikan, tapi
       // itu bukan hasil saringan — jangan ikut dihitung sebagai yang tersaring.
+      anak.dataset.lolos=lolos?'1':'0';
       const ok=buka&&lolos;
       anak.style.display=ok?'':'none';
       if(ok)tampak++;
       anak=anak.nextElementSibling;
     }
   });
+  perbaruiCentangJenis();
   // Hampir semua folder produk ada isinya, jadi saringan "hanya yang ada
   // fotonya" cuma menyembunyikan segelintir baris. Tanpa angka, kelihatannya
   // seperti tombol yang tidak berfungsi — jadi sebutkan berapa yang kena.
