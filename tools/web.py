@@ -35,6 +35,7 @@ KUNCI_CACHE = threading.Lock()
 # Hasil pemasangan template terakhir. Baris log "dipasang" mudah tenggelam di
 # antara ribuan baris log unggahan, jadi hasilnya juga ditampilkan di kartunya.
 HASIL_TEMPLATE = {}
+HASIL_IMPOR = {}      # hasil impor berkas hasil Shopee terakhir, untuk kartunya
 SINGGAHAN = {}                # cache hasil pemindaian folder
 BERKAS_CACHE = os.path.join(inti.AKAR, 'data', 'cache_folder.json')
 # Dinaikkan tiap kali isi hasil status_folder berubah bentuk, supaya cache lama
@@ -888,6 +889,31 @@ class Penangan(BaseHTTPRequestHandler):
 
                 return self._kirim({'mulai': di_latar('pasang template', kerja),
                                     'id': percobaan, 'berkas': os.path.basename(berkas)})
+            if self.path == '/api/impor_hasil':
+                berkas = dialog_berkas('Pilih berkas hasil dari Shopee (Result_shopee_...xlsx)')
+                if not berkas:
+                    return self._kirim({'batal': True})
+                percobaan = '{:.3f}'.format(time.time())
+
+                def kerja():
+                    import hasil_shopee
+                    hasil = {'id': percobaan, 'ok': False, 'sedang': False,
+                             'waktu': time.strftime('%Y-%m-%d %H:%M'),
+                             'berkas': os.path.basename(berkas), 'pesan': ''}
+                    HASIL_IMPOR.clear()
+                    HASIL_IMPOR.update(hasil, sedang=True)
+                    try:
+                        hasil.update(hasil_shopee.impor(inti, cfg, berkas), ok=True)
+                    except BaseException as e:
+                        hasil['pesan'] = str(e)
+                        raise
+                    finally:
+                        HASIL_IMPOR.clear()
+                        HASIL_IMPOR.update(hasil)
+
+                # jalur ekspor: membaca berkas output/ dan menulis tahap folder
+                return self._kirim({'mulai': di_latar('impor hasil Shopee', kerja),
+                                    'id': percobaan, 'berkas': os.path.basename(berkas)})
             if self.path == '/api/segarkan_r2':
                 return self._kirim({'mulai': di_latar('segarkan daftar R2', lambda: (
                     modul_unggah.segarkan_manifest_r2(inti, cfg),
@@ -1072,6 +1098,7 @@ class Penangan(BaseHTTPRequestHandler):
         return {'akar': inti.AKAR, 'root_drive': cfg['foto'].get('root'), 'sumber': sumber,
                 'template': inti.info_template(cfg),
                 'hasil_template': dict(HASIL_TEMPLATE) or None,
+                'hasil_impor': dict(HASIL_IMPOR) or None,
                 'tambahan': daftar_tambahan(cfg),
                 'base_url': cfg['foto'].get('base_url') or '',
                 'toko': cfg['toko'], 'sku': sku, 'db': n_db, 'unggah': n_unggah,

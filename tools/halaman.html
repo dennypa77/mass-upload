@@ -564,6 +564,38 @@ tr.rinci li{margin:2px 0}
       </div>
     </div>
   </div>
+
+  <div class="kartu" style="margin-top:14px">
+    <h2>5. Hasil upload dari Shopee</h2>
+    <div class="isi">
+      <div id="hasilImpor"></div>
+      <div class="baris">
+        <button class="utama" onclick="imporHasil()">Impor hasil Shopee…</button>
+        <button onclick="bukaFolder('output')">Buka folder hasil</button>
+      </div>
+      <div class="arti">
+        Kalau sebagian produk gagal, Shopee memberi berkas <code>Result_shopee_…xlsx</code>
+        di riwayat Mass Upload (tombol <b>Download</b>). Impor berkas itu di sini: tools
+        mencari sendiri berkas ekspor asalnya, lalu menandai tahap folder <b>untuk toko itu
+        saja</b> — yang berhasil jadi <b>sudah di Shopee</b>, yang gagal jadi
+        <b>ditolak Shopee</b> beserta penyebabnya.
+        <br><br>Berkas hasil Shopee hanya memuat produk yang gagal; yang berhasil dihitung
+        dari berkas ekspor aslinya. Jadi jangan hapus isi <code>output/</code> sebelum
+        hasilnya diimpor. Kalau semua produk berhasil, Shopee tidak memberi berkas hasil —
+        tandai sendiri di tab 1.
+        <br><br>Hasil tiap produk diingat. Satu folder yang terbagi ke bagian 1 dan bagian 2
+        baru jadi <b>sudah di Shopee</b> kalau semua produknya berhasil, urutan impornya
+        bebas. Produk yang gagal lalu diupload ulang cukup diimpor lagi hasilnya — atau,
+        kalau kali ini semuanya berhasil, tandai foldernya sendiri. Berkas hasil yang lebih
+        lama tidak menimpa hasil yang lebih baru.
+        <br><br>Setelah itu cari folder yang perlu diulang dengan saringan tahap
+        <b>Ada toko ditolak Shopee</b> di tab 1. Penyebab <i>foto belum lengkap</i> perlu
+        fotonya dilengkapi dulu; penyebab <i>gangguan server Shopee</i> fotonya sudah
+        benar, cukup diupload ulang — sebaiknya dengan batas per berkas yang lebih kecil.
+        Laporan per produk tersimpan di <code>output/hasil_shopee/</code>.
+      </div>
+    </div>
+  </div>
 </section>
 
 <!-- ------------------------------------------------------------ LOG -->
@@ -848,6 +880,7 @@ function muatStatus(){
     if(document.activeElement!==$('#baseurl')) $('#baseurl').value=s.base_url;
     if(s.sumber&&document.activeElement.className!=='jalurSumber') gambarSumber(s.sumber);
     if(s.template)gambarTemplate(s.template,s.hasil_template);
+    gambarHasilImpor(s.hasil_impor);
     if(s.toko&&!TOKO.length){
       TOKO=s.toko;
       gambarBilah();
@@ -1139,6 +1172,61 @@ function gambarHasilTemplate(hasil){
       <div class="kecil">${(hasil.pesan||'lihat log').replace(/</g,'&lt;')}</div>`;
   }
   kotak.innerHTML=`<div style="border-left:3px solid ${warna};padding:8px 12px;margin-bottom:10px">${isi}</div>`;
+}
+
+// Hasil impor berkas hasil Shopee: berapa yang berhasil dan gagal, penyebabnya,
+// dan berapa folder yang tahapnya diperbarui.
+function gambarHasilImpor(h){
+  const kotak=$('#hasilImpor');
+  if(!kotak)return;
+  if(!h){kotak.innerHTML='';return;}
+  const bingkai=(warna,isi)=>`<div style="border-left:3px solid ${warna};padding:8px 12px;margin-bottom:12px">${isi}</div>`;
+  if(h.sedang){
+    kotak.innerHTML=bingkai('var(--biru)',`Mengimpor <b>${h.berkas||'hasil Shopee'}</b>…`);
+    return;
+  }
+  if(!h.ok){
+    kotak.innerHTML=bingkai('var(--merah)',`<span style="color:var(--merah)">✗</span>
+      <b>Gagal mengimpor ${h.berkas||''}</b> — ${h.waktu||''}
+      <div class="kecil">${(h.pesan||'lihat log').replace(/</g,'&lt;')}</div>`);
+    return;
+  }
+  const saran={'foto belum lengkap':'lengkapi fotonya dulu, lalu ekspor ulang',
+               'gangguan server Shopee':'foto sudah benar — cukup upload ulang',
+               'lainnya':'lihat alasan lengkap di laporan'};
+  const penyebab=(h.penyebab||[]).map(([k,n])=>`<tr><td class="angka">${n} produk</td>
+    <td><b>${k}</b></td><td class="kecil redup">${saran[k]||''}</td></tr>`).join('');
+  kotak.innerHTML=bingkai(h.gagal?'var(--kuning)':'var(--hijau)',
+    `<b>${h.nama_toko}</b> — ${h.waktu} <span class="kecil redup">· ${h.berkas}</span>
+     <div style="margin:6px 0">
+       <span style="color:var(--hijau)"><b>${h.berhasil}</b> berhasil</span> ·
+       <span style="color:var(--merah)"><b>${h.gagal}</b> gagal</span>
+       ${h.ekspor?`<span class="kecil redup">· berkas asal ${h.ekspor}</span>`
+         :`<div class="kecil" style="color:var(--kuning)">Berkas ekspor asalnya tidak ketemu,
+            jadi hanya yang gagal yang ditandai.</div>`}
+     </div>
+     ${penyebab?`<table style="margin:4px 0"><tbody>${penyebab}</tbody></table>`:''}
+     <div class="kecil" style="margin-top:6px">Tahap ${h.nama_toko} diperbarui:
+       <b>${h.folder_diupload}</b> folder sudah di Shopee, <b>${h.folder_ditolak}</b> folder
+       ditolak${h.usang?`, ${h.usang} produk tidak diubah (sudah ada hasil yang lebih baru)`:''}${
+       h.tanpa_folder?`, ${h.tanpa_folder} produk tidak ketemu foldernya`:''}.</div>
+     <div class="kecil redup">Laporan per produk: ${h.laporan||'—'}</div>`);
+}
+
+function imporHasil(){
+  api('/api/impor_hasil',{}).then(r=>{
+    if(r.batal)return;
+    if(!r.mulai){alert('Masih ada pekerjaan lain yang berjalan di jalur ekspor.');return;}
+    gambarHasilImpor({sedang:true,berkas:r.berkas});
+    // tunggu hasil percobaan ini sendiri, bukan hasil impor sebelumnya
+    let sisa=160;
+    const tunggu=()=>api('/api/status').then(s=>{
+      const h=s.hasil_impor;
+      if(h&&h.id===r.id&&!h.sedang){gambarHasilImpor(h);muatPohon();muatDasbor();return;}
+      if(--sisa>0)setTimeout(tunggu,1500);
+    }).catch(()=>{if(--sisa>0)setTimeout(tunggu,1500);});
+    setTimeout(tunggu,1500);
+  });
 }
 
 function pasangTemplate(){

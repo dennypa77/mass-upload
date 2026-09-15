@@ -671,6 +671,39 @@ pengalaman, 1 level variasi masih diterima sampai ~60 varian. Tools ini memakai 
 variasi. Kalau file ditolak Shopee karena kelebihan varian, seri perlu dipecah jadi beberapa
 listing.
 
+## Sebagian produk gagal di Shopee: impor berkas hasilnya
+
+Kalau Mass Upload berstatus **Berhasil Sebagian**, unduh berkas hasilnya di riwayat
+Mass Upload Seller Centre (`Result_shopee_…xlsx`), lalu di tab **4. Export** tekan
+**Impor hasil Shopee…**. Tools akan:
+
+1. mencari sendiri berkas ekspor asalnya di `output/` (tanda tangan template di baris 2
+   sama, nama toko sama, dan memuat semua produk yang gagal) — berkas hasil Shopee hanya
+   berisi produk yang gagal, jadi yang berhasil dihitung dari sana. **Jangan hapus isi
+   `output/` sebelum hasilnya diimpor;**
+2. mencatat hasil tiap produk per toko di `data/hasil_shopee.csv`;
+3. menandai tahap folder **untuk toko itu saja**: *sudah di Shopee* kalau semua produk
+   folder itu yang pernah diimpor berhasil, *ditolak Shopee* kalau ada yang gagal —
+   dengan jumlah dan penyebabnya di catatan;
+4. menulis laporan per produk ke `output/hasil_shopee/`.
+
+Penyebab dikelompokkan menurut yang harus dilakukan:
+
+| Penyebab | Yang dilakukan |
+|---|---|
+| foto belum lengkap | produk berangkat tanpa foto sampul — lengkapi fotonya, proses ulang foldernya, ekspor lagi |
+| gangguan server Shopee | fotonya sudah benar (`external system return error`, `i/o timeout`) — cukup upload ulang, sebaiknya dengan batas per berkas lebih kecil |
+| lainnya | lihat kolom alasan di laporan |
+
+Satu folder bisa terbagi ke bagian 1 dan bagian 2; urutan impornya bebas. Berkas hasil
+yang lebih lama (dilihat dari tanggal di nama berkasnya) tidak menimpa hasil yang lebih
+baru. Kalau semua produk berhasil, Shopee tidak memberi berkas hasil — tandai sendiri di
+tab 1. Commit `data/hasil_shopee.csv` bersama `data/tahap_folder.csv`; waktu memperbarui
+keduanya digabung, bukan ditimpa.
+
+Sejak fitur ini, **Buat berkas Excel** tidak lagi mengikutkan produk yang belum punya
+foto sampul — Shopee pasti menolaknya. Daftarnya disebut di log.
+
 ## Kalau upload terlihat macet
 
 Git menulis progress unggahan dengan *carriage return*, bukan baris baru. Versi lama tools

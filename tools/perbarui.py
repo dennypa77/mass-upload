@@ -118,6 +118,15 @@ def pasang(inti, cetak=print):
                       'ini dipertahankan'.format(n))
                 pulih.append(rel + ' (digabung)')
                 continue
+            # hasil upload Shopee per produk juga digabung, alasannya sama
+            if os.path.normpath(rel).lower() == os.path.normpath(
+                    os.path.join('data', 'hasil_shopee.csv')).lower():
+                import hasil_shopee
+                n = hasil_shopee.gabung_rekaman(asal)
+                cetak('[perbarui] hasil upload Shopee digabung, {} catatan dari komputer '
+                      'ini dipertahankan'.format(n))
+                pulih.append(rel + ' (digabung)')
+                continue
             shutil.copy2(asal, os.path.join(inti.AKAR, rel.replace('/', os.sep)))
             pulih.append(rel)
         if pulih:

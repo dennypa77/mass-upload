@@ -1289,7 +1289,8 @@ def gabung_tahap(berkas_lain):
     return baru
 
 
-def setel_tahap(folder, tahap, catatan='', oleh='', toko=None, daftar_toko=None):
+def setel_tahap(folder, tahap, catatan='', oleh='', toko=None, daftar_toko=None,
+                semua=None):
     """Tandai beberapa folder sekaligus. folder = [{jenis, dari, sampai}].
 
     toko = toko yang ditandai (folder_foto, mis. toko3); kosong berarti semua
@@ -1299,7 +1300,11 @@ def setel_tahap(folder, tahap, catatan='', oleh='', toko=None, daftar_toko=None)
     """
     if tahap not in TAHAP:
         raise ValueError('tahap tidak dikenal: {}'.format(tahap))
-    semua = baca_tahap()
+    # semua diberikan pemanggil yang menandai banyak folder sekaligus; dia yang
+    # menyimpan di akhir, supaya berkasnya tidak ditulis ulang ratusan kali
+    simpan = semua is None
+    if simpan:
+        semua = baca_tahap()
     waktu = time.strftime('%Y-%m-%d %H:%M')
     toko = [t for t in (toko or []) if t]
     daftar_toko = list(daftar_toko or [])
@@ -1340,8 +1345,24 @@ def setel_tahap(folder, tahap, catatan='', oleh='', toko=None, daftar_toko=None)
                 else:
                     semua[k] = baris(tk)
         n += 1
-    tulis_tahap(semua)
+    if simpan:
+        tulis_tahap(semua)
     return n
+
+
+def setel_tahap_banyak(entri, oleh='', daftar_toko=None):
+    """Banyak penandaan dengan tahap, catatan, dan toko masing-masing; disimpan sekali.
+
+    entri = [{jenis, dari, sampai, tahap, catatan, toko: [...]}]. Dipakai waktu
+    mengimpor hasil upload Shopee, di mana tiap folder bisa berhasil atau gagal
+    dengan alasannya sendiri.
+    """
+    semua = baca_tahap()
+    for e in entri:
+        setel_tahap([e], e['tahap'], e.get('catatan') or '', oleh, toko=e.get('toko'),
+                    daftar_toko=daftar_toko, semua=semua)
+    tulis_tahap(semua)
+    return len(entri)
 
 
 def _ganti_berkas(sementara, tujuan, coba=40):
@@ -1658,6 +1679,31 @@ def buang_bagian_basi(tujuan, nama_dasar, dipakai):
 def perintah_build(cfg, data, sub=None):
     paket = kumpulkan(cfg, data)
     batas_l, batas_b = batas_berkas(cfg)
+
+    # Listing tanpa foto sampul pasti ditolak Shopee ("Gambar produk wajib
+    # diisi") — pernah 56 dari 246 listing satu berkas berangkat tanpa sampul.
+    # Yang begitu tidak diekspor, dan disebutkan di log supaya fotonya
+    # dilengkapi dulu.
+    tanpa_sampul = {}
+    for berkas in list(paket):
+        tpl, listings = paket[berkas]
+        ada = [L for L in listings if L['utama'] and L['utama'][0]]
+        for L in listings:
+            if not (L['utama'] and L['utama'][0]):
+                kode = L['kode_induk'].split('-', 1)[-1]
+                tanpa_sampul[kode] = (L['desain'][0]['sku'], L['desain'][-1]['sku'])
+        if ada:
+            paket[berkas] = (tpl, ada)
+        else:
+            del paket[berkas]
+    if tanpa_sampul:
+        print('[build] ! {} produk tidak diekspor karena belum punya foto sampul — '
+              'Shopee pasti menolaknya:'.format(len(tanpa_sampul)))
+        for kode, (awal, akhir) in sorted(tanpa_sampul.items())[:30]:
+            print('     {:<44} {} s/d {}'.format(kode[:44], awal, akhir))
+        if len(tanpa_sampul) > 30:
+            print('     … dan {} lagi'.format(len(tanpa_sampul) - 30))
+        print('     Lengkapi foto sampulnya, proses ulang foldernya, lalu ekspor lagi.')
     tujuan = os.path.join(dir_keluaran(), sub) if sub else dir_keluaran()
 
     rencana = []
