@@ -1787,11 +1787,48 @@ function tandai(tahap){
     });
 }
 
+// Folder yang sudah tayang di semua toko tidak ikut diproses atau diekspor lagi.
+// Tahap dicatat per rentang nomor, bukan per path — jadi folder yang sama di
+// sumber lain (mis. JIBBITZ utama vs Revisi) tetap dikenali sudah dikerjakan.
+// Yang baru tayang di sebagian toko tetap ikut, tapi disebutkan.
+function pisahSudahTayang(daftar){
+  const baris=new Map([...document.querySelectorAll('tr.folder')].map(tr=>[tr.dataset.path,tr]));
+  const lanjut=[],tayang=[],sebagian=[];
+  daftar.forEach(f=>{
+    const tr=baris.get(f.path);
+    const tt=tr?tahapToko(tr):{};
+    const nilai=daftarTokoTahap(tt).map(t=>(tt[t.folder_foto]||{}).tahap||'belum');
+    const semua=(nilai.length&&nilai.every(v=>v==='diupload'))
+      ||(tr&&tr.dataset.tahap==='diupload');
+    if(semua)tayang.push(f);
+    else{lanjut.push(f);if(nilai.includes('diupload'))sebagian.push(f);}
+  });
+  return {lanjut,tayang,sebagian};
+}
+function teksSudahTayang(p,kata){
+  const br=String.fromCharCode(10);
+  const daftar=a=>a.slice(0,8).map(f=>'· '+(f.jenis||'')+' '+(f.nama||f.path)).join(br)
+    +(a.length>8?br+'… +'+(a.length-8)+' folder lagi':'');
+  let t='';
+  if(p.tayang.length)t+=br+br+p.tayang.length+' folder sudah di Shopee semua toko, TIDAK ikut '
+    +kata+':'+br+daftar(p.tayang)
+    +br+'(kalau memang mau diulang, kosongkan dulu tahapnya di tab 1)';
+  if(p.sebagian.length)t+=br+br+p.sebagian.length+' folder sudah di Shopee di sebagian toko — '
+    +'tetap ikut, tapi jangan upload ulang ke toko yang sudah tayang:'+br+daftar(p.sebagian);
+  return t;
+}
+
 function prosesBanyak(){
-  const n=dipilih.size;
-  if(!n)return;
+  if(!dipilih.size)return;
+  const p=pisahSudahTayang([...dipilih.values()]);
+  if(!p.lanjut.length){
+    alert('Semua folder yang dicentang sudah di Shopee semua toko — tidak ada yang diproses.'
+      +teksSudahTayang(p,'diproses'));
+    return;
+  }
   const push=$('#pushBanyak').checked;
-  const daftar=[...dipilih.values()];
+  const daftar=p.lanjut;
+  const n=daftar.length;
   const br=String.fromCharCode(10);
   let pesan='Proses '+n+' folder yang dicentang?'+br+br
     +daftar.slice(0,10).map(f=>'· '+f.nama).join(br)
@@ -1802,6 +1839,7 @@ function prosesBanyak(){
   // berjam-jam. Sebutkan itu sebelum dijalankan, bukan sesudahnya.
   if(n>20)pesan+=br+br+'Ini pekerjaan panjang — kira-kira '+n+' folder x beberapa '
     +'menit. Jendela boleh ditinggal, prosesnya jalan di server.';
+  pesan+=teksSudahTayang(p,'diproses');
   if(!confirm(pesan))return;
   api('/api/unggah',{paths:daftar.map(f=>f.path),push:push,
                      paksa:$('#paksaBanyak').checked}).then(r=>{
@@ -1812,6 +1850,9 @@ function prosesBanyak(){
 function proses(){
   if(!pilih)return;
   const push=$('#push').checked;
+  const p=pisahSudahTayang([{path:pilih.path}]);
+  if(p.tayang.length&&!confirm('Folder ini sudah tercatat di Shopee semua toko.'
+     +String.fromCharCode(10)+'Tetap proses ulang?'))return;
   if(!confirm(`Proses folder:\n${pilih.path}\n\n`+
      (push?'Foto akan disalin, lalu di-commit dan di-push ke GitHub.':
            'Foto hanya disalin, tanpa upload.')))return;
@@ -1821,8 +1862,22 @@ function proses(){
 }
 
 /* ---------------------------------------------------------------- kesiapan */
-function perintah(n){api('/api/perintah',{perintah:n,folders:daftarLingkup()}).then(r=>{
-  if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');});}
+function perintah(n){
+  let folders=daftarLingkup();
+  if(n==='build'&&dipilih.size){
+    const p=pisahSudahTayang([...dipilih.values()]);
+    if(!p.lanjut.length){
+      alert('Semua folder yang dicentang sudah di Shopee semua toko — tidak ada yang diekspor.'
+        +teksSudahTayang(p,'diekspor'));
+      return;
+    }
+    if((p.tayang.length||p.sebagian.length)
+       &&!confirm('Ekspor '+p.lanjut.length+' folder?'+teksSudahTayang(p,'diekspor')))return;
+    folders=p.lanjut.map(f=>({jenis:f.jenis,dari:f.dari,sampai:f.sampai}));
+  }
+  api('/api/perintah',{perintah:n,folders:folders}).then(r=>{
+    if(!r.mulai)alert('Masih ada pekerjaan lain yang berjalan.');});
+}
 
 function muatCek(){
   $('#cek').innerHTML='<span class="redup">memeriksa…</span>';
