@@ -1059,10 +1059,23 @@ class Penangan(BaseHTTPRequestHandler):
                             '' if os.path.isdir(d) else '(tidak ditemukan)'))
                 return self._kirim({'ok': True})
             if self.path == '/api/config':
-                cfg['foto']['base_url'] = (badan.get('base_url') or '').strip().rstrip('/') or None
+                # Yang ditulis HANYA base_url, ke isi config.json apa adanya dari
+                # disk — bukan `cfg`, yang sudah digabung dengan data/lokal.json.
+                #
+                # `cfg` memuat kunci R2 (penyimpanan.r2.akses/rahasia) yang
+                # sengaja ditaruh di lokal.json karena berkas itu tidak ikut git.
+                # config.json sebaliknya DILACAK git dan terbit ke repo publik
+                # (jsDelivr menyajikan repo ini), jadi menulis cfg gabungan ke
+                # sana berarti menerbitkan kunci R2 ke internet pada push
+                # berikutnya. Riwayat git sudah diperiksa: belum pernah terjadi —
+                # dan dengan ini tidak bisa terjadi.
+                alamat = (badan.get('base_url') or '').strip().rstrip('/') or None
+                with open(inti.CONFIG, encoding='utf-8') as f:
+                    tersimpan = json.load(f)
+                tersimpan.setdefault('foto', {})['base_url'] = alamat
                 with open(inti.CONFIG, 'w', encoding='utf-8') as f:
-                    json.dump(cfg, f, ensure_ascii=False, indent=2)
-                catat('[ui] base_url disimpan: {}'.format(cfg['foto']['base_url'] or '(kosong)'))
+                    json.dump(tersimpan, f, ensure_ascii=False, indent=2)
+                catat('[ui] base_url disimpan: {}'.format(alamat or '(kosong)'))
                 return self._kirim({'ok': True})
         except Exception:
             return self._kirim({'galat': traceback.format_exc()}, kode=500)
