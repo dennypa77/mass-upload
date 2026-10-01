@@ -73,6 +73,35 @@ foldernya masuk `.gitignore`; kalau folder itu kosong di disk — misalnya diber
 menghemat tempat — `git add -A` akan membacanya sebagai penghapusan dan ikut menghapusnya
 dari repo. Semua URL jsDelivr langsung mati 404. Hook ini menolak commit semacam itu.
 
+## Mengambil antrean dari ERP
+
+Di ERP ada **Konsol Mass Upload** (`/rnd/listing` → tab "1. Folder Produk"). Operator mencentang
+folder di sana dan menekan **Proses**; yang masuk ke ERP hanya DAFTAR pekerjaan. Yang menyalin
+dari Drive dan mengunggah ke R2 tetap komputer ini — foto aslinya ada di `G:\My Drive`, dan kunci
+tulis R2 memang sengaja tidak dipegang server.
+
+Sekali saja, isi `data/lokal.json` (berkas ini tidak ikut git):
+
+```json
+"erp": { "url": "https://db.erp-hog.com", "jwt_secret": "…" }
+```
+
+`jwt_secret` sama dengan `VPS_DB_JWT_SECRET` di server; minta ke pengelola ERP. **Jangan**
+menaruhnya di `tools/config.json` — berkas itu dilacak git dan terbit ke repo publik.
+
+Lalu:
+
+```
+python tools/antrean.py            # kerjakan antrean sampai habis
+python tools/antrean.py --sekali   # satu pekerjaan saja
+python tools/antrean.py --pantau   # tetap hidup, periksa tiap 30 detik
+```
+
+Pekerjaan diambil dengan klaim atomik: kalau dua komputer menjalankannya bersamaan, yang kedua
+mendapat nol baris dan melanjutkan ke pekerjaan berikutnya — tidak ada folder yang disalin dua
+kali. Satu folder gagal tidak menghentikan sisanya, dan hasilnya (berhasil/gagal + sebabnya +
+nama komputer) terlihat di ERP.
+
 ## Cara pakai
 
 Cara termudah: klik dua kali **`WEB.bat`** — tampilan terbuka di browser pada
