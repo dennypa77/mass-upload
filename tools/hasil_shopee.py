@@ -350,6 +350,15 @@ def impor(inti, cfg, path, cetak=print, folder_laporan=None):
     if entri:
         inti.setel_tahap_banyak(entri, os.environ.get('COMPUTERNAME') or '',
                                 [t['folder_foto'] for t in cfg['toko']])
+        # Catatan tahap juga didorong ke ERP supaya Konsol Mass Upload tidak
+        # perlu menunggu berkas CSV ini dioper lewat commit git. Tidak pernah
+        # menggagalkan impor: kalau ERP tak terjangkau, catatannya tetap ada di
+        # berkas lokal dan dorongan berikutnya menyusulkan.
+        try:
+            import erp_tahap
+            print('[erp-tahap] ' + erp_tahap.dorong_aman()[1])
+        except Exception as e:  # noqa: BLE001
+            print('[erp-tahap] tidak terdorong: {}'.format(e))
 
     # ---------------------------------------------------------------- laporan
     folder_laporan = folder_laporan or os.path.join(inti.DIR_OUT, 'hasil_shopee')
