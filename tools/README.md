@@ -102,6 +102,29 @@ mendapat nol baris dan melanjutkan ke pekerjaan berikutnya — tidak ada folder 
 kali. Satu folder gagal tidak menghentikan sisanya, dan hasilnya (berhasil/gagal + sebabnya +
 nama komputer) terlihat di ERP.
 
+## Ekspor seluruh data lokal untuk ERP
+
+Tab **4. Export** → **Ekspor seluruh data…** (atau `python tools/ekspor_erp.py`) menyalin semua
+catatan di komputer ini jadi satu `.zip` di `output/ekspor_erp/`, untuk diserahkan ke tim ERP:
+
+| Berkas | Isi |
+|---|---|
+| `listing.csv` | satu baris per seri per toko — `kode_induk` produk Shopee, rentang SKU, tahap, hasil upload terakhir, alamat foto utama |
+| `folder_produk.csv` | folder kerja di Drive, tahap tiap toko jadi kolom |
+| `tahap_folder.csv` | catatan tahap mentah per folder per toko |
+| `hasil_upload_shopee.csv` | hasil tiap produk per toko dari berkas hasil Shopee |
+| `sku.csv` | daftar SKU mentah dari Google Sheet |
+| `foto.csv`, `foto_r2.csv`, `url_foto.csv` | foto mana sudah terunggah dan alamat publiknya |
+| `toko.csv`, `jenis_produk.csv`, `config_publik.json` | pengaturan bersama |
+| `BACA_DULU.md`, `manifest.json` | penjelasan tiap kolom, waktu ekspor, versi tools |
+
+`data/lokal.json` **tidak** ikut: di sana ada kunci R2 dan `jwt_secret` ERP. Foto aslinya juga
+tidak ikut, hanya alamat publiknya.
+
+Catatan pekerjaan tersimpan di tiap komputer, jadi jalankan ini **di setiap komputer karyawan**
+lalu kumpulkan semua zip-nya. Paket ini potret sesaat; tahap folder sendiri sudah punya jalur
+langsung ke ERP lewat `tools/erp_tahap.py`.
+
 ## Cara pakai
 
 Cara termudah: klik dua kali **`WEB.bat`** — tampilan terbuka di browser pada

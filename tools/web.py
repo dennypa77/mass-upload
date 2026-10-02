@@ -36,6 +36,7 @@ KUNCI_CACHE = threading.Lock()
 # antara ribuan baris log unggahan, jadi hasilnya juga ditampilkan di kartunya.
 HASIL_TEMPLATE = {}
 HASIL_IMPOR = {}      # hasil impor berkas hasil Shopee terakhir, untuk kartunya
+HASIL_ERP = {}        # hasil ekspor paket data untuk ERP
 SINGGAHAN = {}                # cache hasil pemindaian folder
 BERKAS_CACHE = os.path.join(inti.AKAR, 'data', 'cache_folder.json')
 # Dinaikkan tiap kali isi hasil status_folder berubah bentuk, supaya cache lama
@@ -889,6 +890,27 @@ class Penangan(BaseHTTPRequestHandler):
 
                 return self._kirim({'mulai': di_latar('pasang template', kerja),
                                     'id': percobaan, 'berkas': os.path.basename(berkas)})
+            if self.path == '/api/ekspor_erp':
+                percobaan = '{:.3f}'.format(time.time())
+
+                def kerja():
+                    import ekspor_erp
+                    hasil = {'id': percobaan, 'ok': False, 'sedang': False,
+                             'waktu': time.strftime('%Y-%m-%d %H:%M'), 'pesan': ''}
+                    HASIL_ERP.clear()
+                    HASIL_ERP.update(hasil, sedang=True)
+                    try:
+                        hasil.update(ekspor_erp.ekspor(inti, cfg), ok=True)
+                    except BaseException as e:
+                        hasil['pesan'] = str(e)
+                        raise
+                    finally:
+                        HASIL_ERP.clear()
+                        HASIL_ERP.update(hasil)
+
+                # jalur ekspor: hanya membaca data lalu menulis ke output/
+                return self._kirim({'mulai': di_latar('ekspor data ERP', kerja),
+                                    'id': percobaan})
             if self.path == '/api/impor_hasil':
                 berkas = dialog_berkas('Pilih berkas hasil dari Shopee (Result_shopee_...xlsx)')
                 if not berkas:
@@ -1112,6 +1134,7 @@ class Penangan(BaseHTTPRequestHandler):
                 'template': inti.info_template(cfg),
                 'hasil_template': dict(HASIL_TEMPLATE) or None,
                 'hasil_impor': dict(HASIL_IMPOR) or None,
+                'hasil_erp': dict(HASIL_ERP) or None,
                 'tambahan': daftar_tambahan(cfg),
                 'base_url': cfg['foto'].get('base_url') or '',
                 'toko': cfg['toko'], 'sku': sku, 'db': n_db, 'unggah': n_unggah,

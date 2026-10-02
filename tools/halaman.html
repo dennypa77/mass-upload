@@ -596,6 +596,31 @@ tr.rinci li{margin:2px 0}
       </div>
     </div>
   </div>
+
+  <div class="kartu" style="margin-top:14px">
+    <h2>6. Ekspor data untuk ERP</h2>
+    <div class="isi">
+      <div id="hasilErp"></div>
+      <div class="baris">
+        <button class="utama" onclick="eksporErp()">Ekspor seluruh data…</button>
+        <button onclick="bukaFolder('output')">Buka folder hasil</button>
+      </div>
+      <div class="arti">
+        Menyalin <b>seluruh catatan di komputer ini</b> jadi satu berkas <code>.zip</code> di
+        <code>output/ekspor_erp/</code>: tahap tiap folder per toko, hasil upload Shopee per
+        produk, daftar SKU, daftar listing beserta kode produk Shopee-nya, foto mana yang
+        sudah terunggah beserta alamat publiknya, dan pengaturan bersama.
+        <br><br>Isinya CSV datar plus <code>BACA_DULU.md</code> yang menjelaskan tiap kolom,
+        jadi tim ERP bisa langsung mengimpornya. Kirim berkas <code>.zip</code> itu ke mereka.
+        <br><br><b>Kunci Cloudflare R2 dan folder sumber tiap komputer tidak ikut diekspor.</b>
+        Foto aslinya juga tidak ikut — yang ikut alamat publiknya.
+        <br><br>Catatan pekerjaan tersimpan di tiap komputer, jadi <b>jalankan ini di setiap
+        komputer karyawan</b> lalu kirim semua zip-nya. Data yang sudah digabung lewat
+        GitHub (tahap folder dan hasil Shopee) akan sama, tapi daftar foto tiap komputer
+        bisa berbeda.
+      </div>
+    </div>
+  </div>
 </section>
 
 <!-- ------------------------------------------------------------ LOG -->
@@ -881,6 +906,7 @@ function muatStatus(){
     if(s.sumber&&document.activeElement.className!=='jalurSumber') gambarSumber(s.sumber);
     if(s.template)gambarTemplate(s.template,s.hasil_template);
     gambarHasilImpor(s.hasil_impor);
+    gambarHasilErp(s.hasil_erp);
     if(s.toko&&!TOKO.length){
       TOKO=s.toko;
       gambarBilah();
@@ -1211,6 +1237,43 @@ function gambarHasilImpor(h){
        ditolak${h.usang?`, ${h.usang} produk tidak diubah (sudah ada hasil yang lebih baru)`:''}${
        h.tanpa_folder?`, ${h.tanpa_folder} produk tidak ketemu foldernya`:''}.</div>
      <div class="kecil redup">Laporan per produk: ${h.laporan||'—'}</div>`);
+}
+
+// Hasil ekspor paket ERP: letak berkasnya dan jumlah baris tiap tabel.
+function gambarHasilErp(h){
+  const kotak=$('#hasilErp');
+  if(!kotak)return;
+  if(!h){kotak.innerHTML='';return;}
+  const bingkai=(warna,isi)=>`<div style="border-left:3px solid ${warna};padding:8px 12px;margin-bottom:12px">${isi}</div>`;
+  if(h.sedang){kotak.innerHTML=bingkai('var(--biru)','Menyiapkan paket data…');return;}
+  if(!h.ok){
+    kotak.innerHTML=bingkai('var(--merah)',`<span style="color:var(--merah)">✗</span>
+      <b>Ekspor gagal</b> — ${h.waktu||''}
+      <div class="kecil">${(h.pesan||'lihat log').replace(/</g,'&lt;')}</div>`);
+    return;
+  }
+  const isi=Object.entries(h.jumlah||{}).sort()
+    .map(([k,v])=>`<tr><td><code>${k}</code></td><td class="angka">${v} baris</td></tr>`).join('');
+  kotak.innerHTML=bingkai('var(--hijau)',
+    `<b>Paket data siap</b> — ${h.waktu}${h.komputer?' · '+h.komputer:''}
+     <div class="kecil" style="margin:6px 0">${h.zip||''}
+       ${h.ukuran?`<span class="redup">(${(h.ukuran/1048576).toFixed(1)} MB)</span>`:''}</div>
+     ${isi?`<table style="margin:4px 0"><tbody>${isi}</tbody></table>`:''}
+     <div class="kecil redup">Kirim berkas .zip itu ke tim ERP.</div>`);
+}
+
+function eksporErp(){
+  api('/api/ekspor_erp',{}).then(r=>{
+    if(!r.mulai){alert('Masih ada pekerjaan lain yang berjalan di jalur ekspor.');return;}
+    gambarHasilErp({sedang:true});
+    let sisa=200;
+    const tunggu=()=>api('/api/status').then(s=>{
+      const h=s.hasil_erp;
+      if(h&&h.id===r.id&&!h.sedang){gambarHasilErp(h);return;}
+      if(--sisa>0)setTimeout(tunggu,1500);
+    }).catch(()=>{if(--sisa>0)setTimeout(tunggu,1500);});
+    setTimeout(tunggu,1500);
+  });
 }
 
 function imporHasil(){
