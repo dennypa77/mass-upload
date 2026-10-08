@@ -146,7 +146,10 @@ def sekali_putaran(erp, cfg, batas=None):
     while batas is None or dikerjakan < batas:
         status, data = panggil(
             erp, 'GET',
-            '{}?status=eq.menunggu&order=dibuat_at.asc&limit=5'
+            # pekerjaan=eq.unggah WAJIB sejak antrean dipakai dua jenis
+            # pekerjaan: tanpa ini, pengambil lama akan mengklaim perintah
+            # Corel dan mencoba menyalin foto yang belum dibuat.
+            '{}?pekerjaan=eq.unggah&status=eq.menunggu&order=dibuat_at.asc&limit=5'
             '&select=id,jenis,dari,sampai,opsi_push,opsi_paksa'.format(TABEL),
         )
         if status >= 300:
