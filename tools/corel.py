@@ -74,6 +74,12 @@ SETELAN_SAH = (
 
 BATAS_MENIT_BAWAAN = 20
 
+PROGID_UMUM = 'CorelDRAW.Application'
+
+# Sub tanpa parameter di modFotoProduk.bas yang keberadaannya menandai
+# "modul ini sudah memuat jembatan ERP". Lihat alasannya di sambung_corel.
+PENANDA = 'modFotoProduk.FotoProdukJembatanSiap'
+
 
 # --------------------------------------------------------------- pengaturan
 def baca_corel():
@@ -84,6 +90,7 @@ def baca_corel():
         'keluaran': str(c.get('keluaran') or '').strip(),
         'template': str(c.get('template') or '').strip(),
         'batas_menit': float(c.get('batas_menit') or BATAS_MENIT_BAWAAN),
+        'progid': str(c.get('progid') or '').strip(),
     }
 
 
@@ -149,7 +156,99 @@ def susun_perintah(baris, folder_desain, pengaturan, berkas_hasil):
 
 
 # --------------------------------------------------------------------- corel
-def jalankan_macro(perintah, batas_detik):
+def progid_terpasang():
+    """ProgID CorelDRAW yang terdaftar di PC ini, versi terbaru dulu.
+
+    `CorelDRAW.Application` TANPA nomor versi hanya menunjuk satu suite -
+    yang terakhir mendaftarkan diri, belum tentu yang dipakai operator. Di PC
+    develop ini ia menunjuk suite 25 sementara modFotoProduk dipasang di
+    suite 27: memakainya buta berarti Corel versi lain ikut dinyalakan dalam
+    keadaan kosong, lalu macronya dilaporkan "tidak ditemukan" - padahal ada,
+    cuma di instance yang lain.
+    """
+    try:
+        import winreg
+    except ImportError:
+        return []
+    ada = []
+    for versi in range(40, 19, -1):
+        nama = '{}.{}'.format(PROGID_UMUM, versi)
+        try:
+            winreg.CloseKey(winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, nama))
+        except OSError:
+            continue
+        ada.append(nama)
+    return ada
+
+
+def daftar_makro(app):
+    """Nama makro yang terdaftar di proyek GMS, mis. "modFotoProduk.Stop"."""
+    nama = []
+    try:
+        proyek = app.GMSManager.Projects.Item(PROYEK_GMS)
+        makro = proyek.Macros
+        for i in range(1, makro.Count + 1):
+            nama.append(str(makro.Item(i).Name))
+    except Exception:  # noqa: BLE001
+        pass
+    return nama
+
+
+def sambung_corel(win32com, progid=''):
+    """(app, progid) untuk suite yang BENAR-BENAR memuat jembatan ERP.
+
+    Kenapa daftar makro diperiksa dan bukan sekadar mencoba memanggil:
+    GMSManager.RunMacro MENGABAIKAN nama yang tidak dikenal tanpa sepatah
+    pun kesalahan. Sudah diuji di PC host - "modNgawur.Apa" kembali None
+    dalam 0,0 detik, sama persis dengan panggilan yang berhasil. Jadi
+    panggilan buta tidak bisa membedakan "berhasil" dari "modulnya versi
+    lama", dan pekerjaan yang sebetulnya tidak terjadi akan dilaporkan
+    selesai.
+
+    Daftar Macros hanya memuat Sub tanpa parameter, jadi FotoProdukOtomatis
+    (Function, berparameter) tidak pernah ada di situ. Itulah sebabnya
+    modFotoProduk.bas punya Sub penanda yang isinya kosong.
+    """
+    kandidat = [progid] if progid else progid_terpasang() + [PROGID_UMUM]
+    sebab = []
+    for nama in kandidat:
+        try:
+            app = win32com.Dispatch(nama)
+        except Exception as e:  # noqa: BLE001
+            sebab.append('{}: tidak bisa dijalankan ({})'.format(nama, e))
+            continue
+        try:
+            app.Visible = True
+        except Exception:  # noqa: BLE001
+            pass
+        makro = daftar_makro(app)
+        if PENANDA in makro:
+            return app, nama
+        if any(m.startswith('modFotoProduk.') for m in makro):
+            sebab.append('{}: modFotoProduk ada tapi versi lama - belum '
+                         'memuat {}'.format(nama, PENANDA.split('.')[-1]))
+        else:
+            sebab.append('{}: modFotoProduk tidak dimuat di sini'.format(nama))
+    raise RuntimeError(
+        'Tidak ada CorelDRAW yang siap. Di PC host: buka VBA editor '
+        '(Alt+F11) -> klik proyek GlobalMacros -> File > Import File -> '
+        'pilih modFotoProduk.bas versi terbaru (ganti modul lamanya), lalu '
+        'simpan. Bisa juga menyebut suitenya di data/lokal.json -> '
+        'corel.progid. Yang dicoba: ' + ' | '.join(sebab))
+
+
+def ringkas_galat(e):
+    """Pesan COM yang terbaca manusia, bukan tuple kode kesalahan."""
+    try:
+        rinci = e.args[2]
+        if rinci and rinci[2]:
+            return str(rinci[2])
+    except Exception:  # noqa: BLE001
+        pass
+    return str(e)
+
+
+def jalankan_macro(perintah, batas_detik, progid=''):
     """Panggil macro lewat COM. Kembalikan (hasil, galat).
 
     Panggilan COM tidak bisa dibatalkan dari luar, jadi dijalankan di utas
@@ -157,7 +256,7 @@ def jalankan_macro(perintah, batas_detik):
     DIBIARKAN - CorelDRAW masih memegangnya - dan pekerjaan ini dilaporkan
     gagal supaya tidak menggantung selamanya di antrean sebagai "berjalan".
     """
-    hasil = {'nilai': None, 'galat': None}
+    hasil = {'nilai': None, 'galat': None, 'progid': ''}
 
     def kerja():
         try:
@@ -172,11 +271,12 @@ def jalankan_macro(perintah, batas_detik):
         except Exception:
             pass
         try:
-            app = win32com.client.Dispatch('CorelDRAW.Application')
-            try:
-                app.Visible = True
-            except Exception:
-                pass
+            app, dipakai = sambung_corel(win32com.client, progid)
+            hasil['progid'] = dipakai
+            # Perintah dikirim sebagai argumen biasa, bukan tuple: RunMacro
+            # meneruskan apa yang diberikan apa adanya, dan tuple sampai di
+            # VBA sebagai deret - tidak cocok dengan `ByVal perintah As
+            # String`, dan macro-nya diam tanpa kesalahan.
             hasil['nilai'] = app.GMSManager.RunMacro(PROYEK_GMS, MACRO, perintah)
         except Exception as e:  # noqa: BLE001
             hasil['galat'] = '{}: {}'.format(type(e).__name__, e)
@@ -291,12 +391,16 @@ def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
         return
 
     mulai = time.time()
-    nilai, galat = jalankan_macro(perintah, pengaturan['batas_menit'] * 60)
+    nilai, galat = jalankan_macro(
+        perintah, pengaturan['batas_menit'] * 60, pengaturan['progid'])
     lama = time.time() - mulai
 
-    # Macro menulis hasilnya ke berkas juga - dipakai kalau kembalian COM
-    # kosong, yang bisa terjadi tergantung versi CorelDRAW.
-    teks = str(nilai or '').strip() or baca_hasil(berkas_hasil)
+    # Berkas hasil yang ditulis macro adalah sumber utamanya, bukan pelengkap:
+    # GMSManager.RunMacro di CorelDRAW 2026 (suite 27) SELALU mengembalikan
+    # Nothing, berapa pun yang dikembalikan fungsi VBA-nya. Sudah diukur di
+    # PC host. Kembalian COM tetap dipakai kalau ada, untuk versi yang
+    # kelakuannya berbeda.
+    teks = baca_hasil(berkas_hasil) or str(nilai or '').strip()
     hasil = urai_hasil(teks)
 
     if galat:
