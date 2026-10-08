@@ -465,12 +465,22 @@ def main():
     p.add_argument('--jeda', type=int, default=30, help='jeda --pantau, detik')
     p.add_argument('--demo', action='store_true',
                    help='tampilkan perintahnya saja, jangan panggil CorelDRAW')
+    p.add_argument('--url', default='',
+                   help='alamat PostgREST lain, mis. http://127.0.0.1:3102 '
+                        'untuk DB dev (rahasianya tetap dari lokal.json)')
     a = p.parse_args()
 
     sambungan = erp.baca_erp()
     if not sambungan:
         print('[corel] data/lokal.json belum memuat {"erp": {"url": ..., "jwt_secret": ...}}')
         return 1
+
+    # Alamat boleh ditimpa, rahasianya TIDAK: yang perlu diarahkan saat
+    # mencoba di lokal cuma DB-nya (dev lewat terowongan SSH), dan rahasia
+    # di baris perintah akan tertinggal di riwayat shell.
+    if a.url:
+        sambungan = dict(sambungan, url=a.url.rstrip('/'))
+        print('[corel] DB ditimpa: {}'.format(sambungan['url']))
 
     cfg = inti.baca_config()
     pengaturan = baca_corel()
