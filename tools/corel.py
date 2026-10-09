@@ -1,16 +1,25 @@
 # -*- coding: utf-8 -*-
-"""Ambil perintah "buat foto produk" dari ERP, jalankan macro CorelDRAW di PC
-ini, lalu lapor balik.
+"""Ambil perintah dari ERP, jalankan macro CorelDRAW di PC ini, lalu lapor
+balik.
 
 Pasangan dari tools/antrean.py, dengan pembagian kerja yang sama: ERP yang
 MENGANTRE, PC yang MENGERJAKAN. Sambungannya selalu keluar dari PC ini, jadi
 tidak ada port yang perlu dibuka di jaringan kantor.
 
 Bedanya hanya isi pekerjaannya. antrean.py menyalin foto yang sudah jadi;
-berkas ini menjalankan macro yang MEMBUAT fotonya, lewat COM:
+berkas ini menjalankan macro yang MEMBUATNYA, lewat COM:
 
     CorelDRAW.Application -> GMSManager.RunMacro
-        "GlobalMacros", "modFotoProduk.FotoProdukOtomatis", "<perintah>"
+        "GlobalMacros", "<modul>.<gerbang>", "<perintah>"
+
+Dua jenis pekerjaan diambil dari antrean yang sama:
+
+    pekerjaan=corel   -> modFotoProduk.FotoProdukOtomatis
+                         (foto varian & foto sampul; folder desain dicari
+                          sendiri dari nomor blok)
+    pekerjaan=stiker  -> AutoStikerOutline1.StikerOutlineOtomatis
+                         (gambar -> .cdr bergaris potong; folder DISEBUT di
+                          baris antreannya, diisi operator di ERP)
 
 Jalankan:
 
@@ -58,11 +67,21 @@ import erp  # noqa: E402
 import shopee_mass_upload as inti  # noqa: E402
 
 TABEL = 'rnd_listing_antrean'
-PEKERJAAN = 'corel'
 NAMA_PC = os.environ.get('COMPUTERNAME') or socket.gethostname()
 
 PROYEK_GMS = 'GlobalMacros'
-MACRO = 'modFotoProduk.FotoProdukOtomatis'
+
+# Tiap jenis pekerjaan punya macro sendiri DAN penanda sendiri. Penanda
+# selalu Sub tanpa parameter, karena hanya yang seperti itu terdaftar di
+# GMSManager Macros - lihat sambung_corel.
+MACRO = {
+    'corel': 'modFotoProduk.FotoProdukOtomatis',
+    'stiker': 'AutoStikerOutline1.StikerOutlineOtomatis',
+}
+PENANDA_MACRO = {
+    'corel': 'modFotoProduk.FotoProdukJembatanSiap',
+    'stiker': 'AutoStikerOutline1.StikerOutlineJembatanSiap',
+}
 
 # Kunci setelan yang boleh dioper ke macro. Yang tidak dikenal DIBUANG dan
 # dilaporkan, bukan diteruskan: nama kunci yang salah membuat macro memakai
@@ -76,9 +95,7 @@ BATAS_MENIT_BAWAAN = 20
 
 PROGID_UMUM = 'CorelDRAW.Application'
 
-# Sub tanpa parameter di modFotoProduk.bas yang keberadaannya menandai
-# "modul ini sudah memuat jembatan ERP". Lihat alasannya di sambung_corel.
-PENANDA = 'modFotoProduk.FotoProdukJembatanSiap'
+SETELAN_STIKER = ('jalur', 'mode', 'ukuran', 'jarak')
 
 
 # --------------------------------------------------------------- pengaturan
@@ -155,6 +172,60 @@ def susun_perintah(baris, folder_desain, pengaturan, berkas_hasil):
     return ';'.join(bagian), mode, dibuang
 
 
+def susun_perintah_stiker(baris, berkas_hasil):
+    """String perintah untuk StikerOutlineOtomatis, dari baris antrean.
+
+    Folder DISEBUT di baris antreannya (berbeda dengan pekerjaan foto
+    produk, yang foldernya dicari PC sendiri dari nomor blok): gambar
+    stiker tidak tersusun per blok dan operator memilih foldernya tiap
+    kali. Konsekuensinya diperiksa di sini - folder yang tidak ada di PC
+    ini dilaporkan GAGAL dengan menyebut path-nya, bukan dicari-cari di
+    tempat lain.
+    """
+    param = baris.get('parameter') or {}
+    if isinstance(param, str):
+        try:
+            param = json.loads(param)
+        except ValueError:
+            param = {}
+
+    masuk = str(baris.get('folder_path') or '').strip()
+    keluar = str(param.get('keluar') or '').strip()
+    if not masuk or not keluar:
+        raise ValueError('baris antrean tidak memuat folder masuk/keluar')
+    if not os.path.isdir(masuk):
+        raise ValueError('folder sumber tidak ada di PC ini: ' + masuk)
+
+    # Folder tujuan dibuat kalau belum ada - macro menulis ke dalamnya dan
+    # akan gagal satu per satu kalau induknya tidak ada.
+    try:
+        os.makedirs(keluar, exist_ok=True)
+    except OSError as e:
+        raise ValueError('folder tujuan tidak bisa dibuat: {} ({})'.format(keluar, e))
+
+    jalur = str(param.get('jalur') or 'png').lower()
+    if jalur not in ('massal', 'png', 'svg'):
+        raise ValueError('jalur tidak dikenal: ' + jalur)
+
+    bagian = [
+        'jalur=' + jalur,
+        'masuk=' + masuk,
+        'keluar=' + keluar,
+        'hasil=' + berkas_hasil,
+    ]
+    for kunci in SETELAN_STIKER:
+        if kunci == 'jalur':
+            continue
+        if param.get(kunci) is not None:
+            bagian.append('{}={}'.format(kunci, param[kunci]))
+
+    for b in bagian:
+        if ';' in b:
+            raise ValueError('ada titik koma di dalam nilai: ' + b)
+
+    return ';'.join(bagian), jalur
+
+
 # --------------------------------------------------------------------- corel
 def progid_terpasang():
     """ProgID CorelDRAW yang terdaftar di PC ini, versi terbaru dulu.
@@ -194,7 +265,7 @@ def daftar_makro(app):
     return nama
 
 
-def sambung_corel(win32com, progid=''):
+def sambung_corel(win32com, penanda, progid=''):
     """(app, progid) untuk suite yang BENAR-BENAR memuat jembatan ERP.
 
     Kenapa daftar makro diperiksa dan bukan sekadar mencoba memanggil:
@@ -221,20 +292,21 @@ def sambung_corel(win32com, progid=''):
             app.Visible = True
         except Exception:  # noqa: BLE001
             pass
+        modul = penanda.split('.')[0]
         makro = daftar_makro(app)
-        if PENANDA in makro:
+        if penanda in makro:
             return app, nama
-        if any(m.startswith('modFotoProduk.') for m in makro):
-            sebab.append('{}: modFotoProduk ada tapi versi lama - belum '
-                         'memuat {}'.format(nama, PENANDA.split('.')[-1]))
+        if any(m.startswith(modul + '.') for m in makro):
+            sebab.append('{}: {} ada tapi versi lama - belum memuat {}'
+                         .format(nama, modul, penanda.split('.')[-1]))
         else:
-            sebab.append('{}: modFotoProduk tidak dimuat di sini'.format(nama))
+            sebab.append('{}: {} tidak dimuat di sini'.format(nama, modul))
     raise RuntimeError(
         'Tidak ada CorelDRAW yang siap. Di PC host: buka VBA editor '
         '(Alt+F11) -> klik proyek GlobalMacros -> File > Import File -> '
-        'pilih modFotoProduk.bas versi terbaru (ganti modul lamanya), lalu '
-        'simpan. Bisa juga menyebut suitenya di data/lokal.json -> '
-        'corel.progid. Yang dicoba: ' + ' | '.join(sebab))
+        'pilih {}.bas versi terbaru (ganti modul lamanya), lalu simpan. '
+        'Bisa juga menyebut suitenya di data/lokal.json -> corel.progid. '
+        'Yang dicoba: {}'.format(penanda.split('.')[0], ' | '.join(sebab)))
 
 
 def ringkas_galat(e):
@@ -248,7 +320,7 @@ def ringkas_galat(e):
     return str(e)
 
 
-def jalankan_macro(perintah, batas_detik, progid=''):
+def jalankan_macro(perintah, batas_detik, progid='', pekerjaan='corel'):
     """Panggil macro lewat COM. Kembalikan (hasil, galat).
 
     Panggilan COM tidak bisa dibatalkan dari luar, jadi dijalankan di utas
@@ -271,13 +343,15 @@ def jalankan_macro(perintah, batas_detik, progid=''):
         except Exception:
             pass
         try:
-            app, dipakai = sambung_corel(win32com.client, progid)
+            app, dipakai = sambung_corel(
+                win32com.client, PENANDA_MACRO[pekerjaan], progid)
             hasil['progid'] = dipakai
             # Perintah dikirim sebagai argumen biasa, bukan tuple: RunMacro
             # meneruskan apa yang diberikan apa adanya, dan tuple sampai di
             # VBA sebagai deret - tidak cocok dengan `ByVal perintah As
             # String`, dan macro-nya diam tanpa kesalahan.
-            hasil['nilai'] = app.GMSManager.RunMacro(PROYEK_GMS, MACRO, perintah)
+            hasil['nilai'] = app.GMSManager.RunMacro(
+                PROYEK_GMS, MACRO[pekerjaan], perintah)
         except Exception as e:  # noqa: BLE001
             hasil['galat'] = '{}: {}'.format(type(e).__name__, e)
 
@@ -344,7 +418,68 @@ def lapor(sambungan, id_baris, status, pesan=None, jumlah=None):
         print('[corel] gagal melapor #{}: {} {}'.format(id_baris, kode, data))
 
 
+def siapkan_berkas_hasil(nama):
+    """Berkas tempat macro menulis hasilnya; dikosongkan dulu."""
+    berkas = os.path.join(inti.AKAR, 'output', nama)
+    os.makedirs(os.path.dirname(berkas), exist_ok=True)
+    try:
+        if os.path.exists(berkas):
+            os.remove(berkas)
+    except OSError:
+        pass
+    return berkas
+
+
+def laporkan_hasil(sambungan, baris, tanda, teks, galat, lama, label):
+    """Satu tempat untuk mengubah hasil macro jadi laporan antrean."""
+    if galat:
+        pesan = '{} ({:.0f} detik)'.format(galat, lama)
+        print('[corel] {} GAGAL: {}'.format(tanda, pesan))
+        lapor(sambungan, baris['id'], 'gagal', pesan)
+        return
+
+    hasil = urai_hasil(teks)
+    jadi = int(hasil.get('jadi') or 0)
+    gagal = int(hasil.get('gagal') or 0)
+    status = 'berhasil' if hasil.get('ok') == '1' else 'gagal'
+    pesan = '{} {} jadi, {} gagal, {:.0f} detik. {}'.format(
+        jadi, label, gagal, lama, hasil.get('catatan', '')[:1200])
+    print('[corel] {} {}: {}'.format(tanda, status.upper(), pesan[:160]))
+    lapor(sambungan, baris['id'], status, pesan, jadi)
+
+
+def kerjakan_stiker(sambungan, pengaturan, baris, demo=False):
+    """Pekerjaan outline stiker: gambar -> .cdr dengan garis potong."""
+    tanda = '#{} {}'.format(baris['id'], baris['jenis'])
+    berkas_hasil = siapkan_berkas_hasil('stiker-hasil.txt')
+
+    try:
+        perintah, jalur = susun_perintah_stiker(baris, berkas_hasil)
+    except ValueError as e:
+        print('[corel] {} GAGAL: {}'.format(tanda, e))
+        if not demo:
+            lapor(sambungan, baris['id'], 'gagal', str(e))
+        return
+
+    print('[corel] {} outline jalur {}'.format(tanda, jalur))
+    if demo:
+        print('[corel]   PERINTAH: {}'.format(perintah))
+        print('[corel]   (demo - CorelDRAW tidak dipanggil, antrean tidak diubah)')
+        return
+
+    mulai = time.time()
+    nilai, galat = jalankan_macro(
+        perintah, pengaturan['batas_menit'] * 60, pengaturan['progid'],
+        pekerjaan='stiker')
+    lama = time.time() - mulai
+    teks = baca_hasil(berkas_hasil) or str(nilai or '').strip()
+    laporkan_hasil(sambungan, baris, tanda, teks, galat, lama, 'berkas CDR')
+
+
 def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
+    if (baris.get('pekerjaan') or 'corel') == 'stiker':
+        return kerjakan_stiker(sambungan, pengaturan, baris, demo=demo)
+
     tanda = '#{} {} {}-{}'.format(baris['id'], baris['jenis'],
                                   baris['dari'], baris['sampai'])
 
@@ -365,13 +500,7 @@ def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
             lapor(sambungan, baris['id'], 'gagal', pesan)
         return
 
-    berkas_hasil = os.path.join(inti.AKAR, 'output', 'corel-hasil.txt')
-    os.makedirs(os.path.dirname(berkas_hasil), exist_ok=True)
-    try:
-        if os.path.exists(berkas_hasil):
-            os.remove(berkas_hasil)
-    except OSError:
-        pass
+    berkas_hasil = siapkan_berkas_hasil('corel-hasil.txt')
 
     try:
         perintah, mode, dibuang = susun_perintah(baris, folder, pengaturan, berkas_hasil)
@@ -401,22 +530,7 @@ def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
     # PC host. Kembalian COM tetap dipakai kalau ada, untuk versi yang
     # kelakuannya berbeda.
     teks = baca_hasil(berkas_hasil) or str(nilai or '').strip()
-    hasil = urai_hasil(teks)
-
-    if galat:
-        pesan = '{} ({:.0f} detik)'.format(galat, lama)
-        print('[corel] {} GAGAL: {}'.format(tanda, pesan))
-        lapor(sambungan, baris['id'], 'gagal', pesan)
-        return
-
-    jadi = int(hasil.get('jadi') or 0)
-    gagal = int(hasil.get('gagal') or 0)
-    status = 'berhasil' if hasil.get('ok') == '1' else 'gagal'
-    pesan = '{} berkas jadi, {} gagal, {:.0f} detik. {}'.format(
-        jadi, gagal, lama, hasil.get('catatan', '')[:1200])
-
-    print('[corel] {} {}: {}'.format(tanda, status.upper(), pesan[:160]))
-    lapor(sambungan, baris['id'], status, pesan, jadi)
+    laporkan_hasil(sambungan, baris, tanda, teks, galat, lama, 'foto')
 
 
 def sekali_putaran(sambungan, cfg, pengaturan, batas=None, demo=False):
@@ -424,8 +538,9 @@ def sekali_putaran(sambungan, cfg, pengaturan, batas=None, demo=False):
     while batas is None or dikerjakan < batas:
         kode, data = erp.panggil(
             sambungan, 'GET',
-            '{}?pekerjaan=eq.{}&status=eq.menunggu&order=dibuat_at.asc&limit=5'
-            '&select=id,jenis,dari,sampai,parameter'.format(TABEL, PEKERJAAN),
+            '{}?pekerjaan=in.({})&status=eq.menunggu&order=dibuat_at.asc'
+            '&limit=5&select=id,pekerjaan,jenis,dari,sampai,folder_path,parameter'
+            .format(TABEL, ','.join(sorted(MACRO))),
         )
         if kode >= 300:
             print('[corel] gagal membaca antrean: {} {}'.format(kode, data))
