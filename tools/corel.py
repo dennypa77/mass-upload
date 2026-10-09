@@ -145,10 +145,12 @@ def susun_perintah(baris, folder_desain, pengaturan, berkas_hasil):
     if mode not in ('varian', 'utama'):
         mode = 'varian'
 
+    keluaran = str(param.get('keluar') or '').strip() or pengaturan['keluaran']
+
     bagian = [
         'mode=' + mode,
         'desain=' + folder_desain,
-        'keluaran=' + pengaturan['keluaran'],
+        'keluaran=' + keluaran,
         'template=' + pengaturan['template'],
         'hasil=' + berkas_hasil,
     ]
@@ -156,7 +158,7 @@ def susun_perintah(baris, folder_desain, pengaturan, berkas_hasil):
     dibuang = []
     for kunci, nilai in param.items():
         k = str(kunci).lower()
-        if k == 'mode':
+        if k in ('mode', 'keluar'):
             continue
         if k not in SETELAN_SAH:
             dibuang.append(k)
@@ -320,7 +322,7 @@ def ringkas_galat(e):
     return str(e)
 
 
-def jalankan_macro(perintah, batas_detik, progid='', pekerjaan='corel'):
+def jalankan_macro(perintah, batas_detik, progid='', pekerjaan='corel', pantau=None):
     """Panggil macro lewat COM. Kembalikan (hasil, galat).
 
     Panggilan COM tidak bisa dibatalkan dari luar, jadi dijalankan di utas
@@ -357,6 +359,8 @@ def jalankan_macro(perintah, batas_detik, progid='', pekerjaan='corel'):
 
     utas = threading.Thread(target=kerja, daemon=True)
     utas.start()
+    if pantau is not None:
+        pantau(utas)
     utas.join(batas_detik)
 
     if utas.is_alive():
@@ -364,6 +368,61 @@ def jalankan_macro(perintah, batas_detik, progid='', pekerjaan='corel'):
                       'dialognya sendiri. Periksa layar PC host.'
                       .format(batas_detik / 60.0))
     return hasil['nilai'], hasil['galat']
+
+
+def isi_folder(akar):
+    """Set path semua berkas di bawah `akar`. Kosong kalau foldernya belum ada."""
+    hasil = set()
+    for induk, _, berkas in os.walk(akar):
+        for b in berkas:
+            hasil.add(os.path.join(induk, b))
+    return hasil
+
+
+def hitung_bahan(folder, ekstensi, rekursif):
+    """Berapa berkas yang akan dikerjakan - penyebut untuk bar kemajuan."""
+    n = 0
+    if rekursif:
+        for _, _, berkas in os.walk(folder):
+            n += sum(1 for b in berkas if b.lower().endswith(ekstensi))
+    else:
+        try:
+            n = sum(1 for b in os.listdir(folder)
+                    if os.path.isfile(os.path.join(folder, b))
+                    and b.lower().endswith(ekstensi))
+        except OSError:
+            n = 0
+    return n
+
+
+def pantau_kemajuan(sambungan, id_baris, keluaran, sebelum, total, utas, jeda=4):
+    """Lapor "maju N/TOTAL" ke antrean selama macro masih bekerja.
+
+    Angkanya dihitung dari berkas yang SUDAH muncul di folder keluaran,
+    bukan dari waktu yang berlalu. Bar yang bergerak karena timer akan tetap
+    bergerak saat CorelDRAW sebenarnya menggantung - justru di saat itulah
+    operator paling butuh tahu bahwa tidak ada yang terjadi.
+
+    Dijalankan di utas pemanggil sementara macro berjalan di utas lain.
+    """
+    terakhir = -1
+    while utas.is_alive():
+        utas.join(jeda)
+        if not utas.is_alive():
+            break
+        n = len(isi_folder(keluaran) - sebelum)
+        if n == terakhir:
+            continue
+        terakhir = n
+        try:
+            erp.panggil(sambungan, 'PATCH',
+                        '{}?id=eq.{}'.format(TABEL, id_baris),
+                        {'pesan': 'maju {}/{}'.format(n, total)})
+        except Exception:  # noqa: BLE001
+            # Laporan kemajuan tidak boleh menjatuhkan pekerjaannya sendiri:
+            # jaringan putus sebentar lebih baik daripada batch 50 berkas
+            # yang berhenti di tengah.
+            pass
 
 
 def baca_hasil(berkas):
@@ -467,10 +526,19 @@ def kerjakan_stiker(sambungan, pengaturan, baris, demo=False):
         print('[corel]   (demo - CorelDRAW tidak dipanggil, antrean tidak diubah)')
         return
 
+    keluar = perintah.split('keluar=', 1)[1].split(';', 1)[0]
+    total = hitung_bahan(baris['folder_path'],
+                         ('.svg',) if jalur == 'svg' else ('.png', '.jpg', '.jpeg'),
+                         jalur == 'massal')
+    sebelum = isi_folder(keluar)
+    print('[corel]   {} berkas bahan'.format(total))
+
     mulai = time.time()
     nilai, galat = jalankan_macro(
         perintah, pengaturan['batas_menit'] * 60, pengaturan['progid'],
-        pekerjaan='stiker')
+        pekerjaan='stiker',
+        pantau=(lambda u: pantau_kemajuan(sambungan, baris['id'], keluar, sebelum, total, u))
+        if total else None)
     lama = time.time() - mulai
     teks = baca_hasil(berkas_hasil) or str(nilai or '').strip()
     laporkan_hasil(sambungan, baris, tanda, teks, galat, lama, 'berkas CDR')
@@ -483,7 +551,19 @@ def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
     tanda = '#{} {} {}-{}'.format(baris['id'], baris['jenis'],
                                   baris['dari'], baris['sampai'])
 
-    folder = cari_folder_desain(cfg, baris['jenis'], baris['dari'], baris['sampai'])
+    # Folder desain yang DISEBUT di baris antrean menang: itu perintah dari
+    # halaman Desain Host, untuk folder yang tidak bernomor blok. Kalau
+    # kosong, barulah dicari dari nomor bloknya seperti biasa.
+    folder = str(baris.get('folder_path') or '').strip()
+    if folder:
+        if not os.path.isdir(folder):
+            pesan = 'folder desain tidak ada di PC ini: ' + folder
+            print('[corel] {} GAGAL: {}'.format(tanda, pesan))
+            if not demo:
+                lapor(sambungan, baris['id'], 'gagal', pesan)
+            return
+    else:
+        folder = cari_folder_desain(cfg, baris['jenis'], baris['dari'], baris['sampai'])
     if not folder:
         pesan = 'folder desain tidak ketemu di PC ini (PRODUK {} - {})'.format(
             baris['dari'], baris['sampai'])
@@ -519,9 +599,17 @@ def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
         print('[corel]   (demo - CorelDRAW tidak dipanggil, antrean tidak diubah)')
         return
 
+    keluaran = perintah.split('keluaran=', 1)[1].split(';', 1)[0]
+    # Penyebutnya jumlah desain untuk foto varian (1 desain = 1 foto); untuk
+    # foto sampul jumlahnya ditentukan template, jadi barnya tanpa angka.
+    total = hitung_bahan(folder, ('.cdr', '.png'), False) if mode == 'varian' else 0
+    sebelum = isi_folder(keluaran)
+
     mulai = time.time()
     nilai, galat = jalankan_macro(
-        perintah, pengaturan['batas_menit'] * 60, pengaturan['progid'])
+        perintah, pengaturan['batas_menit'] * 60, pengaturan['progid'],
+        pantau=(lambda u: pantau_kemajuan(sambungan, baris['id'], keluaran, sebelum, total, u))
+        if total else None)
     lama = time.time() - mulai
 
     # Berkas hasil yang ditulis macro adalah sumber utamanya, bukan pelengkap:
