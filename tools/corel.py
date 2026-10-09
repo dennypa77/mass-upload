@@ -875,12 +875,20 @@ def kunci_satu_pengambil():
     os.makedirs(os.path.dirname(berkas), exist_ok=True)
     try:
         f = open(berkas, 'a+')
+        # seek(0) WAJIB sebelum mengunci: msvcrt.locking mengunci byte pada
+        # POSISI berkas saat itu, dan mode 'a+' menaruh posisi di akhir.
+        # Tanpa ini tiap proses mengunci byte yang berbeda - kuncinya ada,
+        # tapi tidak menahan siapa pun. Sudah terjadi: dua pengambil hidup
+        # bersamaan padahal keduanya mengira berhasil memegang kunci.
+        f.seek(0)
         msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
     except OSError:
         return None
-    f.seek(0)
+    # Isi berkas ditulis SESUDAH byte 0 terkunci, dan posisinya dikembalikan
+    # supaya kuncinya tetap di byte yang sama selama proses hidup.
+    f.seek(1)
     f.truncate()
-    f.write('{} {}\n'.format(NAMA_PC, time.strftime('%Y-%m-%d %H:%M:%S')))
+    f.write(' {} {}\n'.format(NAMA_PC, time.strftime('%Y-%m-%d %H:%M:%S')))
     f.flush()
     return f
 

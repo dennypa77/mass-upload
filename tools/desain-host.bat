@@ -1,5 +1,5 @@
 @echo off
-rem Versi  : 1.2   (2026-10-09 - berhenti kalau sudah ada pengambil lain)
+rem Versi  : 1.3   (2026-10-09 - tidak meninggalkan jendela menggantung)
 rem ===================================================================
 rem  Desain Host - penghubung ERP <-> CorelDRAW di PC ini
 rem
@@ -86,9 +86,13 @@ rem dokumen yang sama.
 if errorlevel 3 if not errorlevel 4 (
 	echo.
 	echo   Sudah ada Desain Host lain yang jalan di PC ini - jendela ini
-	echo   tidak diperlukan. Tutup saja.
+	echo   tidak diperlukan dan akan tertutup sendiri.
 	echo.
-	pause
+	rem Sengaja TIDAK pause: tugas Windows memanggil berkas ini tiap 5 menit,
+	rem dan tiap panggilan yang kebetulan menemukan pengambil lain akan
+	rem meninggalkan satu jendela menggantung menunggu tombol. Sepuluh detik
+	rem cukup untuk dibaca orang yang kebetulan mengkliknya sendiri.
+	%SystemRoot%\System32\timeout.exe /t 10 >nul
 	exit /b 0
 )
 
