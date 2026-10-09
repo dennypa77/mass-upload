@@ -1,4 +1,5 @@
 @echo off
+rem Versi  : 1.0   (2026-10-09 - pertama)
 rem ===================================================================
 rem  Desain Host - penghubung ERP <-> CorelDRAW di PC ini
 rem
