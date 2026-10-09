@@ -132,7 +132,7 @@ def cari_folder_desain(cfg, jenis, dari, sampai):
 
 
 # ------------------------------------------------------------------ perintah
-def susun_perintah(baris, folder_desain, pengaturan, berkas_hasil):
+def susun_perintah(baris, folder_desain, pengaturan, berkas_hasil, template=''):
     """String `kunci=nilai;...` yang dimengerti FotoProdukOtomatis."""
     param = baris.get('parameter') or {}
     if isinstance(param, str):
@@ -151,14 +151,14 @@ def susun_perintah(baris, folder_desain, pengaturan, berkas_hasil):
         'mode=' + mode,
         'desain=' + folder_desain,
         'keluaran=' + keluaran,
-        'template=' + pengaturan['template'],
+        'template=' + (template or pengaturan['template']),
         'hasil=' + berkas_hasil,
     ]
 
     dibuang = []
     for kunci, nilai in param.items():
         k = str(kunci).lower()
-        if k in ('mode', 'keluar'):
+        if k in ('mode', 'keluar', 'unduh', 'set'):
             continue
         if k not in SETELAN_SAH:
             dibuang.append(k)
@@ -388,6 +388,61 @@ def jalankan_macro(perintah, batas_detik, progid='', pekerjaan='corel', pantau=N
                       'dialognya sendiri. Periksa layar PC host.'
                       .format(batas_detik / 60.0))
     return hasil['nilai'], hasil['galat']
+
+
+def unduh_template(daftar, folder):
+    """Unduh [{nama, url}] ke `folder`. Kembalikan (jumlah baru, jumlah lewat).
+
+    Sepupu dari unduh_bahan() di bawah, yang mengurus gambar bahan Garapan.
+    Dipisah karena aturannya memang beda: background .cdr dipakai ulang
+    berkali-kali sehingga perlu cache, sementara gambar bahan yang dibuat
+    ulang justru HARUS menimpa yang lama.
+
+    Berkas yang ukurannya SUDAH sama dilewati. Background .cdr belasan MB
+    dan satu hari bisa berisi puluhan pekerjaan dengan set yang sama -
+    mengunduh ulang tiap kali berarti menunggu jaringan, bukan menunggu
+    CorelDRAW.
+
+    Perbandingannya ukuran, bukan tanggal: R2 memberi Content-Length di
+    tiap jawaban, sementara tanggal berkas lokal berubah hanya karena
+    disalin. Kalau isi berkas di R2 diganti dengan yang ukurannya persis
+    sama, cache ini akan meleset - karena itu set background yang diubah
+    sebaiknya diberi nama baru, bukan ditimpa.
+    """
+    import urllib.request
+
+    os.makedirs(folder, exist_ok=True)
+    baru = 0
+    lewat = 0
+    for b in daftar or []:
+        nama = os.path.basename(str(b.get('nama') or '').strip())
+        url = str(b.get('url') or '').strip()
+        if not nama or not url:
+            raise ValueError('daftar unduh memuat baris tanpa nama/url')
+
+        tujuan = os.path.join(folder, nama)
+        with urllib.request.urlopen(url, timeout=120) as jawab:
+            panjang = jawab.headers.get('Content-Length')
+            if panjang and os.path.exists(tujuan):
+                try:
+                    if os.path.getsize(tujuan) == int(panjang):
+                        lewat += 1
+                        continue
+                except (OSError, ValueError):
+                    pass
+            # Ditulis ke berkas sementara dulu: unduhan yang putus di tengah
+            # meninggalkan .cdr setengah jadi yang dibaca CorelDRAW sebagai
+            # berkas rusak, dan pesannya tidak menyebut sebabnya.
+            sementara = tujuan + '.part'
+            with open(sementara, 'wb') as f:
+                while True:
+                    potong = jawab.read(1024 * 256)
+                    if not potong:
+                        break
+                    f.write(potong)
+        os.replace(sementara, tujuan)
+        baru += 1
+    return baru, lewat
 
 
 def isi_folder(akar):
@@ -643,6 +698,13 @@ def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
     tanda = '#{} {} {}-{}'.format(baris['id'], baris['jenis'],
                                   baris['dari'], baris['sampai'])
 
+    param = baris.get('parameter') or {}
+    if isinstance(param, str):
+        try:
+            param = json.loads(param)
+        except ValueError:
+            param = {}
+
     # Folder desain yang DISEBUT di baris antrean menang: itu perintah dari
     # halaman Desain Host, untuk folder yang tidak bernomor blok. Kalau
     # kosong, barulah dicari dari nomor bloknya seperti biasa.
@@ -664,7 +726,7 @@ def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
             lapor(sambungan, baris['id'], 'gagal', pesan)
         return
 
-    if not pengaturan['keluaran'] or not pengaturan['template']:
+    if not pengaturan['keluaran'] or not (pengaturan['template'] or param.get('unduh')):
         pesan = ('data/lokal.json belum memuat {"corel": {"keluaran": ..., '
                  '"template": ...}}')
         print('[corel] {} GAGAL: {}'.format(tanda, pesan))
@@ -674,8 +736,27 @@ def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
 
     berkas_hasil = siapkan_berkas_hasil('corel-hasil.txt')
 
+    # Background yang dipilih di ERP diunduh dulu ke cache lokal, lalu
+    # folder itu yang dipakai sebagai template - menggantikan folder
+    # template bawaan PC untuk pekerjaan ini saja.
+    template = ''
+    if param.get('unduh'):
+        nama_set = str(param.get('set') or 'template')
+        template = os.path.join(inti.AKAR, 'template-cache', nama_set)
+        try:
+            baru, lewat = unduh_template(param['unduh'], template)
+            print('[corel]   background "{}": {} diunduh, {} dipakai ulang'.format(
+                nama_set, baru, lewat))
+        except Exception as e:  # noqa: BLE001
+            pesan = 'gagal mengunduh background "{}": {}'.format(nama_set, e)
+            print('[corel] {} GAGAL: {}'.format(tanda, pesan))
+            if not demo:
+                lapor(sambungan, baris['id'], 'gagal', pesan)
+            return
+
     try:
-        perintah, mode, dibuang = susun_perintah(baris, folder, pengaturan, berkas_hasil)
+        perintah, mode, dibuang = susun_perintah(
+            baris, folder, pengaturan, berkas_hasil, template)
     except ValueError as e:
         print('[corel] {} GAGAL: {}'.format(tanda, e))
         if not demo:
