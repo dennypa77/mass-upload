@@ -1,5 +1,5 @@
 @echo off
-rem Versi  : 1.1   (2026-10-09 - cari sendiri letak alatnya)
+rem Versi  : 1.2   (2026-10-09 - berhenti kalau sudah ada pengambil lain)
 rem ===================================================================
 rem  Desain Host - penghubung ERP <-> CorelDRAW di PC ini
 rem
@@ -79,6 +79,19 @@ echo.
 :ulang
 python tools\corel.py %ARG%
 
+rem Kode 3 = sudah ada pengambil lain di PC ini, mis. tugas Windows yang
+rem menyala sendiri. Berhenti, jangan ikut mengantre: satu PC punya satu
+rem CorelDRAW, dan dua pengambil bisa menjalankan dua macro sekaligus di
+rem dokumen yang sama.
+if errorlevel 3 if not errorlevel 4 (
+	echo.
+	echo   Sudah ada Desain Host lain yang jalan di PC ini - jendela ini
+	echo   tidak diperlukan. Tutup saja.
+	echo.
+	pause
+	exit /b 0
+)
+
 rem Sampai di sini berarti pengambilnya berhenti: CorelDRAW ditutup di
 rem tengah jalan, jaringan putus, atau Python galat. Dinyalakan lagi
 rem sendiri - operator tidak akan sadar jendelanya mati diam-diam, dan
@@ -90,5 +103,5 @@ echo.
 rem Dipanggil dengan path penuh: kalau Git Bash ada di PATH, "timeout"
 rem bisa tertuju ke timeout.exe miliknya yang argumennya berbeda, dan
 rem jeda ini berubah jadi galat yang membuat loop berputar tanpa jeda.
-%SystemRoot%\System32	imeout.exe /t 15 /nobreak >nul
+%SystemRoot%\System32\timeout.exe /t 15 /nobreak >nul
 goto ulang

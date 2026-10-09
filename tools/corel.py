@@ -454,6 +454,27 @@ def isi_folder(akar):
     return hasil
 
 
+def hitung_template(folder, sampul):
+    """Berapa template toko di folder itu: tokoN.cdr, atau tokoN-utamaM.cdr.
+
+    Dipakai sebagai pengali penyebut bar kemajuan. Foto varian menulis
+    SATU berkas per desain PER TOKO - 50 desain dengan 3 template berarti
+    150 berkas, bukan 50. Tanpa pengali ini barnya sampai "maju 99/50",
+    angka yang membuat orang berhenti memercayainya.
+    """
+    n = 0
+    try:
+        for b in os.listdir(folder):
+            nama = b.lower()
+            if not nama.endswith('.cdr') or not nama.startswith('toko'):
+                continue
+            if ('-utama' in nama) == bool(sampul):
+                n += 1
+    except OSError:
+        return 0
+    return n
+
+
 def hitung_bahan(folder, ekstensi, rekursif):
     """Berapa berkas yang akan dikerjakan - penyebut untuk bar kemajuan."""
     n = 0
@@ -773,9 +794,13 @@ def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
         return
 
     keluaran = perintah.split('keluaran=', 1)[1].split(';', 1)[0]
-    # Penyebutnya jumlah desain untuk foto varian (1 desain = 1 foto); untuk
-    # foto sampul jumlahnya ditentukan template, jadi barnya tanpa angka.
-    total = hitung_bahan(folder, ('.cdr', '.png'), False) if mode == 'varian' else 0
+    folder_tpl = perintah.split('template=', 1)[1].split(';', 1)[0]
+    if mode == 'varian':
+        # 1 desain x 1 template toko = 1 foto.
+        total = hitung_bahan(folder, ('.cdr', '.png'), False) * hitung_template(folder_tpl, False)
+    else:
+        # Foto sampul: satu berkas per template -utama.
+        total = hitung_template(folder_tpl, True)
     sebelum = isi_folder(keluaran)
 
     mulai = time.time()
@@ -834,6 +859,32 @@ def sekali_putaran(sambungan, cfg, pengaturan, batas=None, demo=False):
     return dikerjakan
 
 
+def kunci_satu_pengambil():
+    """Pegang kunci eksklusif, atau None kalau sudah ada yang memegangnya.
+
+    Satu PC = satu CorelDRAW. Dua pengambil yang jalan bersamaan (mis.
+    tugas Windows yang sudah menyala lalu .bat-nya diklik lagi) bisa
+    menjalankan dua macro sekaligus di dokumen yang sama - sudah terjadi,
+    dua pekerjaan foto berjalan bersisian dan saling mengganggu dokumen
+    aktif. Antrean tidak bisa menjaga ini: klaimnya memang atomik, tapi
+    dua pekerjaan BERBEDA boleh diambil bersamaan.
+    """
+    import msvcrt
+
+    berkas = os.path.join(inti.AKAR, 'output', 'corel-pengambil.lock')
+    os.makedirs(os.path.dirname(berkas), exist_ok=True)
+    try:
+        f = open(berkas, 'a+')
+        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+    except OSError:
+        return None
+    f.seek(0)
+    f.truncate()
+    f.write('{} {}\n'.format(NAMA_PC, time.strftime('%Y-%m-%d %H:%M:%S')))
+    f.flush()
+    return f
+
+
 def main():
     p = argparse.ArgumentParser(description='Pengerjaan antrean foto produk CorelDRAW')
     p.add_argument('--sekali', action='store_true', help='satu pekerjaan saja')
@@ -857,6 +908,14 @@ def main():
     if a.url:
         sambungan = dict(sambungan, url=a.url.rstrip('/'))
         print('[corel] DB ditimpa: {}'.format(sambungan['url']))
+
+    # Dipegang sampai proses berakhir; Windows melepasnya sendiri kalau
+    # prosesnya mati mendadak, jadi tidak ada kunci yatim.
+    kunci = kunci_satu_pengambil()
+    if kunci is None:
+        print('[corel] pengambil lain sudah jalan di PC ini - berhenti.')
+        print('[corel] (tutup jendela Desain Host yang lama kalau mau memakai yang ini)')
+        return 3
 
     cfg = inti.baca_config()
     pengaturan = baca_corel()
