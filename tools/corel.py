@@ -174,6 +174,24 @@ def susun_perintah(baris, folder_desain, pengaturan, berkas_hasil):
     return ';'.join(bagian), mode, dibuang
 
 
+def keluar_per_sumber(masuk, akar):
+    """<akar>\\<nama folder sumber> - hasil terkumpul per folder, bukan menumpuk.
+
+    Tanpa ini dua batch yang dikirim ke folder tujuan yang sama akan
+    bercampur, dan CDR dari batch kemarin tidak bisa dibedakan dari yang
+    hari ini kecuali lewat tanggal berkas.
+
+    Kalau operator SUDAH mengetik nama itu di folder tujuan, tidak
+    ditambahkan lagi: "D:\\CDR\\JB-001\\JB-001" bukan yang dia maksud.
+    """
+    nama = os.path.basename(os.path.normpath(masuk))
+    if not nama:
+        return akar
+    if os.path.basename(os.path.normpath(akar)).lower() == nama.lower():
+        return akar
+    return os.path.join(akar, nama)
+
+
 def susun_perintah_stiker(baris, berkas_hasil):
     """String perintah untuk StikerOutlineOtomatis, dari baris antrean.
 
@@ -197,6 +215,8 @@ def susun_perintah_stiker(baris, berkas_hasil):
         raise ValueError('baris antrean tidak memuat folder masuk/keluar')
     if not os.path.isdir(masuk):
         raise ValueError('folder sumber tidak ada di PC ini: ' + masuk)
+
+    keluar = keluar_per_sumber(masuk, keluar)
 
     # Folder tujuan dibuat kalau belum ada - macro menulis ke dalamnya dan
     # akan gagal satu per satu kalau induknya tidak ada.
@@ -507,12 +527,84 @@ def laporkan_hasil(sambungan, baris, tanda, teks, galat, lama, label):
     lapor(sambungan, baris['id'], status, pesan, jadi)
 
 
+# Nama bahan dari ERP dipakai sebagai nama berkas: hanya nama polos, tanpa
+# folder - nilai seperti "..\x.png" akan menulis di luar folder bahan.
+POLA_NAMA_BAHAN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._ -]{0,120}\.(png|jpe?g)$', re.I)
+
+
+def unduh_bahan(baris, demo=False):
+    """Unduh gambar bahan ke folder sumber SEBELUM outline.
+
+    Dipakai pekerjaan dari Garapan ERP: gambar dibuat Codex di VPS dan dititip
+    di R2, karena VPS tidak bisa menaruh berkas langsung ke PC ini. Baris
+    antrean membawa `parameter.unduh` = [{nama, url}] dengan link sementara.
+    Berkas lama bernama sama DITIMPA - gambar yang dibuat ulang harus
+    menggantikan yang lama. Mengembalikan jumlah berkas yang diunduh.
+    """
+    param = baris.get('parameter') or {}
+    if isinstance(param, str):
+        try:
+            param = json.loads(param)
+        except ValueError:
+            param = {}
+    daftar = param.get('unduh') or []
+    if not daftar:
+        return 0
+    masuk = str(baris.get('folder_path') or '').strip()
+    if not masuk:
+        raise ValueError('baris antrean tidak memuat folder bahan')
+    for b in daftar:
+        nama = str((b or {}).get('nama') or '')
+        url = str((b or {}).get('url') or '')
+        if not POLA_NAMA_BAHAN.match(nama) or '..' in nama:
+            raise ValueError('nama bahan tidak sah: ' + nama[:80])
+        if not url.startswith('https://'):
+            raise ValueError('link bahan bukan https: ' + nama)
+    if demo:
+        print('[corel]   UNDUH {} berkas ke {}'.format(len(daftar), masuk))
+        return len(daftar)
+    try:
+        os.makedirs(masuk, exist_ok=True)
+    except OSError as e:
+        raise ValueError('folder bahan tidak bisa dibuat: {} ({})'.format(masuk, e))
+    import urllib.request
+    import urllib.error
+    for i, b in enumerate(daftar, 1):
+        tujuan = os.path.join(masuk, b['nama'])
+        sementara = tujuan + '.unduh'
+        try:
+            with urllib.request.urlopen(b['url'], timeout=60) as r, open(sementara, 'wb') as f:
+                while True:
+                    potong = r.read(1 << 16)
+                    if not potong:
+                        break
+                    f.write(potong)
+            os.replace(sementara, tujuan)
+        except urllib.error.HTTPError as e:
+            # 403 dari R2 hampir selalu berarti link sudah kedaluwarsa (7 hari).
+            sebab = 'link kedaluwarsa - kirim ulang dari Garapan' if e.code == 403 else str(e)
+            raise ValueError('gagal mengunduh {}: {}'.format(b['nama'], sebab))
+        except (OSError, urllib.error.URLError) as e:
+            raise ValueError('gagal mengunduh {}: {}'.format(b['nama'], e))
+        finally:
+            if os.path.exists(sementara):
+                try:
+                    os.remove(sementara)
+                except OSError:
+                    pass
+    print('[corel]   {} bahan diunduh ke {}'.format(len(daftar), masuk))
+    return len(daftar)
+
+
 def kerjakan_stiker(sambungan, pengaturan, baris, demo=False):
     """Pekerjaan outline stiker: gambar -> .cdr dengan garis potong."""
     tanda = '#{} {}'.format(baris['id'], baris['jenis'])
     berkas_hasil = siapkan_berkas_hasil('stiker-hasil.txt')
 
     try:
+        # Bahan dari Garapan diunduh dulu - susun_perintah_stiker menolak
+        # folder sumber yang belum ada.
+        unduh_bahan(baris, demo=demo)
         perintah, jalur = susun_perintah_stiker(baris, berkas_hasil)
     except ValueError as e:
         print('[corel] {} GAGAL: {}'.format(tanda, e))
