@@ -109,6 +109,11 @@ def setelah_foto(sambungan, inti, cfg, baris, folder_hasil):
         if hasil.get('ok'):
             catatan = 'R2: {} foto dikenali, {} terunggah'.format(
                 hasil.get('foto', 0), hasil.get('terkirim', 0))
+            try:
+                n = catat_indeks(sambungan, inti, cfg, folder_hasil)
+                catatan += ', {} tercatat di Konsol'.format(n)
+            except Exception as e:  # noqa: BLE001
+                catatan += ' (indeks Konsol gagal diperbarui: {} — pakai "Segarkan dari R2")'.format(e)
         else:
             catatan = 'unggah R2 GAGAL: {}'.format(hasil.get('alasan') or 'lihat jendela Desain Host')
     except Exception as e:  # noqa: BLE001
@@ -117,3 +122,41 @@ def setelah_foto(sambungan, inti, cfg, baris, folder_hasil):
     if id_baris:
         _tambah_pesan(sambungan, id_baris, catatan)
     return catatan
+
+
+def catat_indeks(sambungan, inti, cfg, folder_hasil):
+    """Catat foto yang baru terunggah ke indeks foto Konsol di ERP (rnd_listing_foto), lalu
+    segarkan tampilan folder (rnd_listing_segarkan_kesiapan).
+
+    Kenapa di sini: "Segarkan dari R2" di ERP butuh kunci bucket upload-ganci di server, yang
+    sengaja tidak dipasang (kunci baca-tulis bucket listing Shopee). PC host sudah memegangnya
+    dan baru saja mengunggah, jadi PC yang melapor — bentuk barisnya sama dengan uraiPath()
+    di erp-frontend/src/lib/server/rnd/listing/manifest.ts.
+    """
+    import unggah
+    temuan, _, _, _ = unggah.deteksi(inti, cfg, folder_hasil)
+    domain = str(((cfg.get('penyimpanan') or {}).get('r2') or {}).get('domain') or '').rstrip('/')
+    baris = []
+    for t in temuan:
+        path = t['path_repo']
+        kunci = os.path.splitext(os.path.basename(path))[0].upper()
+        lokal = os.path.join(inti.DIR_FOTO, t['toko'], t['slug'], t['nama_tujuan'])
+        ukuran = os.path.getsize(lokal) if os.path.exists(lokal) else None
+        utama = re.match(r'^[A-Z]{2}-(.+)-UTAMA(\d+)$', kunci)
+        baris.append({
+            'toko': t['toko'], 'kunci': kunci, 'tipe': t['tipe'],
+            'sku': kunci if t['tipe'] == 'varian' else None,
+            'seri_kode': utama.group(1) if utama else None,
+            'urutan': int(utama.group(2)) if utama else None,
+            'jenis': t['jenis'], 'url': '{}/{}'.format(domain, path),
+            'ukuran': ukuran, 'path': path, 'aktif': True,
+        })
+    for i in range(0, len(baris), 200):
+        kode, data = erp.panggil(sambungan, 'POST', 'rnd_listing_foto?on_conflict=toko,kunci',
+                                 baris[i:i + 200], prefer='resolution=merge-duplicates,return=minimal')
+        if kode >= 300:
+            raise RuntimeError('rnd_listing_foto {}: {}'.format(kode, str(data)[:200]))
+    kode, data = erp.panggil(sambungan, 'POST', 'rpc/rnd_listing_segarkan_kesiapan', {})
+    if kode >= 300:
+        raise RuntimeError('penyegaran Konsol {}: {}'.format(kode, str(data)[:200]))
+    return len(baris)
