@@ -84,6 +84,22 @@ PENANDA_MACRO = {
     'stiker': 'AutoStikerOutline1.StikerOutlineJembatanSiap',
 }
 
+# Awalan Sub penanda VERSI di tiap modul: namanya berakhir dengan nomor
+# versi (mis. FotoProdukVersi_2_2). Daftar makro CorelDRAW hanya memberi
+# NAMA - nilai kembalian tidak sampai ke pemanggil - jadi versinya memang
+# harus dititipkan di nama.
+AWALAN_VERSI = {
+    'corel': 'modFotoProduk.FotoProdukVersi_',
+    'stiker': 'AutoStikerOutline1.StikerOutlineVersi_',
+}
+
+# Versi minimum yang dibutuhkan FITUR UJI COBA. Sengaja hanya untuk uji:
+# proses massal tetap jalan dengan modul lama, karena yang hilang di sana
+# cuma batas 1 berkas dan PNG pendamping - keduanya tidak dipakai saat
+# massal. Menolak semua pekerjaan hanya karena modul belum diimpor ulang
+# akan menghentikan produksi tanpa perlu.
+MIN_VERSI_UJI = {'corel': (2, 2), 'stiker': (3, 2)}
+
 # Kunci setelan yang boleh dioper ke macro. Yang tidak dikenal DIBUANG dan
 # dilaporkan, bukan diteruskan: nama kunci yang salah membuat macro memakai
 # bawaannya diam-diam, dan hasilnya baru ketahuan sesudah 150 berkas.
@@ -299,6 +315,42 @@ def daftar_makro(app):
     return nama
 
 
+def versi_modul(makro, pekerjaan):
+    """(mayor, minor) modul yang dimuat CorelDRAW, atau None kalau tidak ada.
+
+    None berarti modulnya lebih tua daripada versi yang mulai menitipkan
+    nomor di nama Sub - bukan berarti tidak ada modulnya.
+    """
+    awalan = AWALAN_VERSI.get(pekerjaan)
+    if not awalan:
+        return None
+    for m in makro:
+        if not m.startswith(awalan):
+            continue
+        angka = m[len(awalan):].split('_')
+        try:
+            return tuple(int(x) for x in angka[:2])
+        except ValueError:
+            continue
+    return None
+
+
+def periksa_versi_uji(makro, pekerjaan):
+    """Pesan keluhan kalau modul terlalu tua untuk fitur uji, atau None."""
+    butuh = MIN_VERSI_UJI.get(pekerjaan)
+    if not butuh:
+        return None
+    ada = versi_modul(makro, pekerjaan)
+    if ada is not None and ada >= butuh:
+        return None
+    modul = PENANDA_MACRO[pekerjaan].split('.')[0]
+    return ('modul {} di CorelDRAW masih versi {} - fitur uji coba butuh {}. '
+            'Impor ulang dari ERP: RnD -> Unduhan Alat.'
+            .format(modul,
+                    '.'.join(str(x) for x in ada) if ada else 'lama',
+                    '.'.join(str(x) for x in butuh)))
+
+
 def sambung_corel(win32com, penanda, progid=''):
     """(app, progid) untuk suite yang BENAR-BENAR memuat jembatan ERP.
 
@@ -354,7 +406,8 @@ def ringkas_galat(e):
     return str(e)
 
 
-def jalankan_macro(perintah, batas_detik, progid='', pekerjaan='corel', pantau=None):
+def jalankan_macro(perintah, batas_detik, progid='', pekerjaan='corel', pantau=None,
+                   uji=False):
     """Panggil macro lewat COM. Kembalikan (hasil, galat).
 
     Panggilan COM tidak bisa dibatalkan dari luar, jadi dijalankan di utas
@@ -380,6 +433,15 @@ def jalankan_macro(perintah, batas_detik, progid='', pekerjaan='corel', pantau=N
             app, dipakai = sambung_corel(
                 win32com.client, PENANDA_MACRO[pekerjaan], progid)
             hasil['progid'] = dipakai
+            if uji:
+                # Diperiksa SEBELUM macro dijalankan: modul lama akan
+                # mengerjakan perintahnya dengan senang hati lalu diam-diam
+                # melewatkan PNG pratinjau, dan yang terlihat operator cuma
+                # "tidak ada gambar" tanpa sebab.
+                keluhan = periksa_versi_uji(daftar_makro(app), pekerjaan)
+                if keluhan:
+                    hasil['galat'] = keluhan
+                    return
             # Perintah dikirim sebagai argumen biasa, bukan tuple: RunMacro
             # meneruskan apa yang diberikan apa adanya, dan tuple sampai di
             # VBA sebagai deret - tidak cocok dengan `ByVal perintah As
@@ -1050,6 +1112,7 @@ def kerjakan_stiker(sambungan, cfg, pengaturan, baris, demo=False):
     nilai, galat = jalankan_macro(
         perintah, pengaturan['batas_menit'] * 60, pengaturan['progid'],
         pekerjaan='stiker',
+        uji=bool(folder_uji),
         pantau=(lambda u: pantau_kemajuan(sambungan, baris['id'], keluar, sebelum, total, u))
         if total else None)
     lama = time.time() - mulai
@@ -1216,6 +1279,7 @@ def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
     mulai = time.time()
     nilai, galat = jalankan_macro(
         perintah, pengaturan['batas_menit'] * 60, pengaturan['progid'],
+        uji=bool(folder_uji),
         pantau=(lambda u: pantau_kemajuan(sambungan, baris['id'], keluaran, sebelum, total, u))
         if total else None)
     lama = time.time() - mulai
