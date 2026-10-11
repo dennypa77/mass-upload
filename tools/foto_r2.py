@@ -90,6 +90,16 @@ def setelah_foto(sambungan, inti, cfg, baris, folder_hasil):
         if not os.path.isdir(folder_hasil):
             raise RuntimeError('folder hasil tidak ada: ' + folder_hasil)
         skus = sku_di_folder(folder_hasil)
+        if not skus:
+            # Hanya sampul (foto1/2/3.png): unggah.py mengenali sampul dari SKU foto VARIAN di
+            # folder yang sama (seri → nama <PREFIX>-<KODE>-utamaN). Sampul ditahan di PC dan
+            # ikut terunggah saat Foto Varian produk ini selesai (folder hasil yang sama).
+            catatan = ('R2: sampul disimpan di PC, menunggu Foto Varian — ikut terunggah otomatis '
+                       'setelah Foto Varian produk ini selesai')
+            print('[r2] ' + catatan)
+            if id_baris:
+                _tambah_pesan(sambungan, id_baris, catatan)
+            return catatan
         ditambah = sinkron_sku(sambungan, inti, cfg, skus)
         if ditambah:
             print('[r2] {} SKU baru dari katalog ERP digabung ke data/sku.csv'.format(ditambah))
