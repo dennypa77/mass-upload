@@ -164,7 +164,11 @@ def susun_perintah(baris, folder_desain, pengaturan, berkas_hasil, template=''):
     dibuang = []
     for kunci, nilai in param.items():
         k = str(kunci).lower()
-        if k in ('mode', 'keluar', 'unduh', 'set', 'uji'):
+        # Kunci urusan ERP/PC, bukan setelan macro. Disebut di sini supaya
+        # tidak dilaporkan sebagai "setelan tak dikenal" - peringatan yang
+        # benar bentuknya tapi salah sasaran, dan membuat peringatan yang
+        # SUNGGUHAN (salah ketik nama setelan) tenggelam di antaranya.
+        if k in ('mode', 'keluar', 'unduh', 'set', 'uji') or k.startswith('pratinjau'):
             continue
         if k not in SETELAN_SAH:
             dibuang.append(k)
