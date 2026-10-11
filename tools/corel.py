@@ -108,6 +108,8 @@ def baca_corel():
         'template': str(c.get('template') or '').strip(),
         'batas_menit': float(c.get('batas_menit') or BATAS_MENIT_BAWAAN),
         'progid': str(c.get('progid') or '').strip(),
+        # Folder bahan AI bersama (Google Drive desktop). Kosongkan untuk mematikan unduhan.
+        'bahan_ai': str(c.get('bahan_ai', BAHAN_AI_BAWAAN) or '').strip(),
     }
 
 
@@ -672,6 +674,218 @@ def unduh_bahan(baris, demo=False):
     return len(daftar)
 
 
+# ------------------------------------------------------------ bahan AI
+#
+# Gambar Codex dari Garapan ERP diunduh OTOMATIS ke folder bahan bersama di
+# Google Drive:  <bahan_ai>\<JENIS>\<No. Produk>\<SKU>.png
+# Desainer di PC mana pun memeriksa folder itu (Drive desktop), MENIMPA gambar
+# yang salah / menambah PNG untuk yang gagal, lalu "Kirim ke Desain Host"
+# hanya mengirim path folder ini ke Auto Outline.
+#
+# PC ini tidak memegang kunci R2: pekerja codex-gambar di VPS menulis link
+# presigned 7 hari di kolom url_unduh (dan memperbaruinya sebelum habis).
+
+BAHAN_AI_BAWAAN = r'G:\My Drive\BAHAN AI'
+CATATAN_UNDUHAN = '_unduhan-ai.json'
+BERKAS_KURANG = 'KURANG.txt'
+EKSTENSI_GAMBAR = ('.png', '.jpg', '.jpeg')
+_peringatan_bahan = {'kolom': False, 'akar': False}
+
+
+def _sha_berkas(jalur):
+    import hashlib
+    h = hashlib.sha256()
+    with open(jalur, 'rb') as f:
+        for potong in iter(lambda: f.read(1 << 16), b''):
+            h.update(potong)
+    return h.hexdigest()
+
+
+def _baca_catatan(folder):
+    try:
+        with open(os.path.join(folder, CATATAN_UNDUHAN), encoding='utf-8') as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _tulis_catatan(folder, catatan):
+    tujuan = os.path.join(folder, CATATAN_UNDUHAN)
+    with open(tujuan + '.tmp', 'w', encoding='utf-8') as f:
+        json.dump(catatan, f, ensure_ascii=False, indent=1, sort_keys=True)
+    os.replace(tujuan + '.tmp', tujuan)
+
+
+def folder_bahan(akar, object_key):
+    """garapan/<JENIS>/<No. Produk>/<SKU>.png -> (folder, nama berkas, sku).
+
+    Kunci dibuat ERP, tapi tetap diperiksa: segmen '..' atau berisi ':' / '\\'
+    akan menulis di luar folder bahan.
+    """
+    bagian = str(object_key or '').split('/')
+    if len(bagian) != 4 or bagian[0] != 'garapan':
+        raise ValueError('kunci gambar tidak dikenal: ' + str(object_key)[:120])
+    for b in bagian[1:]:
+        if not b or b in ('.', '..') or any(c in b for c in ':\\'):
+            raise ValueError('kunci gambar tidak aman: ' + str(object_key)[:120])
+    nama = bagian[3]
+    if not POLA_NAMA_BAHAN.match(nama):
+        raise ValueError('nama berkas tidak sah: ' + nama[:80])
+    return os.path.join(akar, bagian[1], bagian[2]), nama, os.path.splitext(nama)[0]
+
+
+def keputusan_timpa(jalur, entri):
+    """Boleh menulis gambar AI baru ke `jalur`?
+
+    - belum ada berkas                    -> ya
+    - berkas = hasil unduhan AI sebelumnya -> ya (gambar dibuat ulang di ERP)
+    - berkas lain (diganti operator)      -> TIDAK, jangan pernah ditimpa
+    """
+    if not os.path.exists(jalur):
+        return True
+    if not entri or not entri.get('sha'):
+        return False
+    try:
+        return _sha_berkas(jalur) == entri['sha']
+    except OSError:
+        return False
+
+
+def tulis_kurang(sambungan, folder, lini, blok):
+    """KURANG.txt = SKU produk ini yang belum punya gambar di folder."""
+    kode, data = erp.panggil(
+        sambungan, 'GET',
+        'rnd_garapan?lini_produk=eq.{}&blok_no=eq.{}&select=sku&order=no_urut.asc'.format(
+            lini, blok))
+    if kode >= 300 or not isinstance(data, list):
+        return
+    ada = {os.path.splitext(n)[0].upper() for n in os.listdir(folder)
+           if n.lower().endswith(EKSTENSI_GAMBAR)}
+    kurang = [str(r.get('sku') or '').strip() for r in data
+              if str(r.get('sku') or '').strip().upper() not in ada]
+    jalur = os.path.join(folder, BERKAS_KURANG)
+    if not kurang:
+        if os.path.exists(jalur):
+            os.remove(jalur)
+        return
+    with open(jalur, 'w', encoding='utf-8') as f:
+        f.write('SKU yang belum punya gambar ({}). Tambahkan PNG bernama SKU di folder ini.\n\n'
+                .format(len(kurang)))
+        f.write('\n'.join(kurang) + '\n')
+
+
+def akar_bahan_erp(sambungan, cadangan):
+    """Folder bahan dari ERP: Admin Panel RnD -> Folder Desain Host.
+
+    Baris yang SAMA dipakai Garapan saat "Kirim ke Desain Host", jadi folder unduhan dan
+    folder yang dioutline tidak bisa berbeda. Belum diatur / gagal dibaca -> `cadangan`
+    (lokal.json corel.bahan_ai, atau bawaan G:\\My Drive\\BAHAN AI).
+    """
+    kode, data = erp.panggil(
+        sambungan, 'GET',
+        'rnd_listing_pengaturan?bagian=eq.desain_host&kunci=eq.folder&select=nilai')
+    if kode < 300 and isinstance(data, list) and data:
+        nilai = (data[0] or {}).get('nilai') or {}
+        akar = str(nilai.get('akar_bahan') or '').strip()
+        if akar:
+            return akar
+    return cadangan
+
+
+def sinkron_bahan_ai(sambungan, akar, demo=False):
+    """Unduh gambar AI yang baru selesai ke folder bahan. Kembalikan jumlah berkas ditulis."""
+    if not akar:
+        return 0
+    induk = os.path.dirname(akar.rstrip('\\/')) or akar
+    if not os.path.isdir(induk):
+        if not _peringatan_bahan['akar']:
+            print('[bahan] folder {} tidak ada (Google Drive desktop belum jalan?) - '
+                  'unduhan bahan AI dilewati.'.format(induk))
+            _peringatan_bahan['akar'] = True
+        return 0
+    kode, data = erp.panggil(
+        sambungan, 'GET',
+        'rnd_garapan_gambar?status=in.(selesai,gagal)&diunduh_at=is.null'
+        '&order=dibuat_at.asc&limit=100'
+        '&select=id,garapan_id,sku,status,object_key,url_unduh,rnd_garapan(lini_produk,blok_no)')
+    if kode >= 300:
+        # Kolom belum ada (migrasi 032 belum dipasang di DB ini): diam setelah sekali lapor.
+        if not _peringatan_bahan['kolom']:
+            print('[bahan] antrean gambar AI belum siap di DB ini ({}).'.format(kode))
+            _peringatan_bahan['kolom'] = True
+        return 0
+    if not data:
+        return 0
+
+    # Satu pekerjaan per SKU yang menentukan berkas: yang SELESAI terbaru (urutan dibuat_at
+    # naik), atau yang gagal kalau tidak ada yang selesai. Sisanya ikut ditandai.
+    terbaru = {}
+    for j in data:
+        lama = terbaru.get(j['garapan_id'])
+        if j.get('status') == 'selesai' or not lama or lama.get('status') != 'selesai':
+            terbaru[j['garapan_id']] = j
+    ditulis = 0
+    selesai_ids = []
+    produk = {}
+    for j in data:
+        if terbaru[j['garapan_id']] is not j:
+            selesai_ids.append(j['id'])
+            continue
+        g = j.get('rnd_garapan') or {}
+        try:
+            folder, nama, sku = folder_bahan(akar, j.get('object_key'))
+        except ValueError as e:
+            print('[bahan] #{} dilewati: {}'.format(j['id'], e))
+            selesai_ids.append(j['id'])
+            continue
+        produk[folder] = (g.get('lini_produk'), g.get('blok_no'))
+        if j.get('status') != 'selesai' or not j.get('url_unduh'):
+            # Gagal: tidak ada yang diunduh, tapi folder & KURANG.txt tetap diperbarui.
+            if j.get('status') == 'selesai':
+                continue  # link belum ada - pekerja VPS akan membuatnya
+            selesai_ids.append(j['id'])
+            continue
+        jalur = os.path.join(folder, nama)
+        if demo:
+            print('[bahan]   UNDUH {} -> {}'.format(sku, jalur))
+            continue
+        os.makedirs(folder, exist_ok=True)
+        catatan = _baca_catatan(folder)
+        if not keputusan_timpa(jalur, catatan.get(sku)):
+            print('[bahan] {} dilewati: sudah diganti operator (tidak ditimpa)'.format(sku))
+            selesai_ids.append(j['id'])
+            continue
+        try:
+            unduh_bahan({'folder_path': folder,
+                         'parameter': {'unduh': [{'nama': nama, 'url': j['url_unduh']}]}})
+        except ValueError as e:
+            # 403 = link kedaluwarsa: biarkan, pekerja VPS memperbaruinya lalu dicoba lagi.
+            print('[bahan] {} gagal: {}'.format(sku, e))
+            continue
+        catatan[sku] = {'job': j['id'], 'sha': _sha_berkas(jalur), 'waktu': waktu_iso()}
+        _tulis_catatan(folder, catatan)
+        ditulis += 1
+        selesai_ids.append(j['id'])
+
+    if demo:
+        return 0
+    for folder, (lini, blok) in produk.items():
+        if lini and blok:
+            try:
+                os.makedirs(folder, exist_ok=True)
+                tulis_kurang(sambungan, folder, lini, blok)
+            except OSError as e:
+                print('[bahan] KURANG.txt {} gagal: {}'.format(folder, e))
+    for i in range(0, len(selesai_ids), 50):
+        potongan = ','.join(selesai_ids[i:i + 50])
+        erp.panggil(sambungan, 'PATCH', 'rnd_garapan_gambar?id=in.({})'.format(potongan),
+                    {'diunduh_at': waktu_iso()}, prefer='return=minimal')
+    if ditulis:
+        print('[bahan] {} gambar AI diunduh ke {}'.format(ditulis, akar))
+    return ditulis
+
+
 def kerjakan_stiker(sambungan, pengaturan, baris, demo=False):
     """Pekerjaan outline stiker: gambar -> .cdr dengan garis potong."""
     tanda = '#{} {}'.format(baris['id'], baris['jenis'])
@@ -712,7 +926,65 @@ def kerjakan_stiker(sambungan, pengaturan, baris, demo=False):
     laporkan_hasil(sambungan, baris, tanda, teks, galat, lama, 'berkas CDR')
 
 
+def cek_folder(folder, sku=None):
+    """Hitung gambar di `folder` (tidak rekursif). Kembalikan (total, pesan).
+
+    `sku` (dari kiriman Garapan) -> sebut juga SKU yang belum punya gambar dan berkas
+    yang namanya bukan SKU produk itu (salah nama = tidak akan cocok saat upload).
+    """
+    if not os.path.isdir(folder):
+        raise ValueError('folder tidak ada di PC ini: ' + folder)
+    per_ext = {}
+    nama = set()
+    for n in os.listdir(folder):
+        e = os.path.splitext(n)[1].lower()
+        if e in EKSTENSI_GAMBAR and os.path.isfile(os.path.join(folder, n)):
+            per_ext[e] = per_ext.get(e, 0) + 1
+            nama.add(os.path.splitext(n)[0].upper())
+    total = sum(per_ext.values())
+    rinci = ', '.join('{} {}'.format(v, k.lstrip('.').upper()) for k, v in sorted(per_ext.items()))
+    pesan = '{} gambar{}'.format(total, ' ({})'.format(rinci) if rinci else '')
+    if sku:
+        daftar = [str(x).strip() for x in sku if str(x).strip()]
+        kurang = [x for x in daftar if x.upper() not in nama]
+        asing = sorted(nama - {x.upper() for x in daftar})
+        pesan += ' dari {} SKU'.format(len(daftar))
+        if kurang:
+            pesan += '. Kurang {}: {}'.format(
+                len(kurang), ', '.join(kurang[:30]) + (' …' if len(kurang) > 30 else ''))
+        else:
+            pesan += '. Lengkap'
+        if asing:
+            pesan += '. Nama bukan SKU produk ini ({}): {}'.format(
+                len(asing), ', '.join(asing[:10]) + (' …' if len(asing) > 10 else ''))
+    return total, pesan
+
+
+def kerjakan_cek(sambungan, baris, demo=False):
+    """Pekerjaan 'cek': hitung gambar di folder sumber - cepat, tanpa CorelDRAW."""
+    tanda = '#{} cek'.format(baris['id'])
+    param = baris.get('parameter') or {}
+    if isinstance(param, str):
+        try:
+            param = json.loads(param)
+        except ValueError:
+            param = {}
+    folder = str(baris.get('folder_path') or '').strip()
+    try:
+        total, pesan = cek_folder(folder, param.get('sku'))
+    except (ValueError, OSError) as e:
+        print('[corel] {} GAGAL: {}'.format(tanda, e))
+        if not demo:
+            lapor(sambungan, baris['id'], 'gagal', str(e))
+        return
+    print('[corel] {} {}: {}'.format(tanda, folder, pesan))
+    if not demo:
+        lapor(sambungan, baris['id'], 'berhasil', pesan, total)
+
+
 def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
+    if baris.get('pekerjaan') == 'cek':
+        return kerjakan_cek(sambungan, baris, demo=demo)
     if (baris.get('pekerjaan') or 'corel') == 'stiker':
         return kerjakan_stiker(sambungan, pengaturan, baris, demo=demo)
 
@@ -820,13 +1092,21 @@ def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
 
 
 def sekali_putaran(sambungan, cfg, pengaturan, batas=None, demo=False):
+    # Bahan AI dulu: unduhan kecil & cepat, dan desainer menunggu gambarnya muncul di Drive.
+    try:
+        # lokal.json corel.bahan_ai = "" mematikan unduhan di PC ini; selain itu folder dari ERP.
+        cadangan = pengaturan.get('bahan_ai')
+        akar = akar_bahan_erp(sambungan, cadangan) if cadangan else ''
+        sinkron_bahan_ai(sambungan, akar, demo=demo)
+    except Exception as e:  # noqa: BLE001 - jangan sampai menghentikan antrean Corel
+        print('[bahan] sinkron gagal: {}'.format(e))
     dikerjakan = 0
     while batas is None or dikerjakan < batas:
         kode, data = erp.panggil(
             sambungan, 'GET',
             '{}?pekerjaan=in.({})&status=eq.menunggu&order=dibuat_at.asc'
             '&limit=5&select=id,pekerjaan,jenis,dari,sampai,folder_path,parameter'
-            .format(TABEL, ','.join(sorted(MACRO))),
+            .format(TABEL, ','.join(sorted(list(MACRO) + ['cek']))),
         )
         if kode >= 300:
             print('[corel] gagal membaca antrean: {} {}'.format(kode, data))
@@ -835,6 +1115,8 @@ def sekali_putaran(sambungan, cfg, pengaturan, batas=None, demo=False):
             return dikerjakan
 
         maju = False
+        # Cek gambar didahulukan: hitungan berkas cuma sedetik, operator menunggu jawabannya.
+        data = sorted(data, key=lambda b: 0 if b.get('pekerjaan') == 'cek' else 1)
         for baris in data:
             if demo:
                 kerjakan(sambungan, cfg, pengaturan, baris, demo=True)
