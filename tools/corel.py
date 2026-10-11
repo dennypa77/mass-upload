@@ -57,6 +57,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import socket
 import sys
 import threading
@@ -157,10 +158,13 @@ def susun_perintah(baris, folder_desain, pengaturan, berkas_hasil, template=''):
         'hasil=' + berkas_hasil,
     ]
 
+    if param.get('uji'):
+        bagian.append('maks=1')
+
     dibuang = []
     for kunci, nilai in param.items():
         k = str(kunci).lower()
-        if k in ('mode', 'keluar', 'unduh', 'set'):
+        if k in ('mode', 'keluar', 'unduh', 'set', 'uji'):
             continue
         if k not in SETELAN_SAH:
             dibuang.append(k)
@@ -237,6 +241,8 @@ def susun_perintah_stiker(baris, berkas_hasil):
         'keluar=' + keluar,
         'hasil=' + berkas_hasil,
     ]
+    if param.get('uji'):
+        bagian.append('maks=1')
     for kunci in SETELAN_STIKER:
         if kunci == 'jalur':
             continue
@@ -390,6 +396,51 @@ def jalankan_macro(perintah, batas_detik, progid='', pekerjaan='corel', pantau=N
                       'dialognya sendiri. Periksa layar PC host.'
                       .format(batas_detik / 60.0))
     return hasil['nilai'], hasil['galat']
+
+
+def berkas_terbaru(akar, sejak=0.0, ekstensi=None):
+    """Berkas termuda di bawah `akar` yang dibuat sesudah `sejak`.
+
+    `ekstensi` menyaring jenisnya — dipakai pratinjau, yang hanya berguna
+    kalau yang diambil gambar.
+    """
+    muda = None
+    for induk, _, berkas in os.walk(akar):
+        for b in berkas:
+            if ekstensi and not b.lower().endswith(tuple(ekstensi)):
+                continue
+            jalur = os.path.join(induk, b)
+            try:
+                waktu = os.path.getmtime(jalur)
+            except OSError:
+                continue
+            if waktu < sejak:
+                continue
+            if muda is None or waktu > muda[1]:
+                muda = (jalur, waktu)
+    return muda[0] if muda else None
+
+
+def unggah_pratinjau(url_unggah, jalur_berkas):
+    """Kirim hasil uji ke URL yang sudah ditandatangani ERP.
+
+    Bukan ke R2 milik PC ini, walau kredensialnya ada: domain bucket itu
+    tidak melayani pembacaan publik - objek lama pun dijawab 403 - jadi
+    gambarnya tidak akan bisa ditampilkan di halaman ERP. Yang dipakai
+    URL PUT bertanda tangan dari ERP, pola yang sama dengan background
+    tapi arah sebaliknya. Tidak ada kredensial baru di sisi mana pun.
+    """
+    import urllib.request
+
+    with open(jalur_berkas, 'rb') as f:
+        isi = f.read()
+    minta = urllib.request.Request(url_unggah, data=isi, method='PUT')
+    minta.add_header('Content-Type', 'image/png')
+    minta.add_header('Content-Length', str(len(isi)))
+    with urllib.request.urlopen(minta, timeout=120) as jawab:
+        if jawab.status >= 300:
+            raise RuntimeError('penyimpanan menolak: HTTP {}'.format(jawab.status))
+    return len(isi)
 
 
 def unduh_template(daftar, folder):
@@ -563,12 +614,28 @@ def waktu_iso():
     return time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime()) + 'Z'
 
 
-def lapor(sambungan, id_baris, status, pesan=None, jumlah=None):
+def siapkan_folder_uji():
+    """Folder keluaran khusus uji coba, dikosongkan tiap kali.
+
+    Hasil uji TIDAK boleh menumpang folder tujuan sungguhan: satu berkas
+    percobaan yang tertinggal di sana akan ikut terunggah sebagai foto
+    listing. Dikosongkan dulu supaya "berkas terbaru" yang dicari
+    sesudahnya pasti milik uji ini, bukan sisa uji kemarin.
+    """
+    folder = os.path.join(inti.AKAR, 'output', 'pratinjau-kerja')
+    shutil.rmtree(folder, ignore_errors=True)
+    os.makedirs(folder, exist_ok=True)
+    return folder
+
+
+def lapor(sambungan, id_baris, status, pesan=None, jumlah=None, parameter=None):
     badan = {'status': status, 'selesai_at': waktu_iso()}
     if pesan is not None:
         badan['pesan'] = pesan[:2000]
     if jumlah is not None:
         badan['jumlah_foto'] = jumlah
+    if parameter is not None:
+        badan['parameter'] = parameter
     kode, data = erp.panggil(sambungan, 'PATCH',
                              '{}?id=eq.{}'.format(TABEL, id_baris), badan)
     if kode >= 300:
@@ -587,8 +654,14 @@ def siapkan_berkas_hasil(nama):
     return berkas
 
 
-def laporkan_hasil(sambungan, baris, tanda, teks, galat, lama, label):
-    """Satu tempat untuk mengubah hasil macro jadi laporan antrean."""
+def laporkan_hasil(sambungan, baris, tanda, teks, galat, lama, label,
+                   cfg=None, folder_uji=None, param=None):
+    """Satu tempat untuk mengubah hasil macro jadi laporan antrean.
+
+    Untuk pekerjaan uji, berkas yang baru jadi ikut diunggah ke R2 dan
+    alamatnya dititipkan di `parameter.pratinjau` — itulah yang
+    ditampilkan ERP sebagai thumbnail.
+    """
     if galat:
         pesan = '{} ({:.0f} detik)'.format(galat, lama)
         print('[corel] {} GAGAL: {}'.format(tanda, pesan))
@@ -601,8 +674,33 @@ def laporkan_hasil(sambungan, baris, tanda, teks, galat, lama, label):
     status = 'berhasil' if hasil.get('ok') == '1' else 'gagal'
     pesan = '{} {} jadi, {} gagal, {:.0f} detik. {}'.format(
         jadi, label, gagal, lama, hasil.get('catatan', '')[:1200])
+
+    param_baru = None
+    if folder_uji and status == 'berhasil':
+        # Yang dicari gambar, bukan sekadar berkas termuda: modul Outline
+        # menghasilkan .cdr DAN .png pendamping, dan yang bisa ditampilkan
+        # browser cuma PNG-nya.
+        contoh = berkas_terbaru(folder_uji, ekstensi=('.png', '.jpg', '.jpeg'))
+        url_unggah = (param or {}).get('pratinjau_unggah')
+        if contoh is None:
+            status = 'gagal'
+            pesan = 'uji selesai tapi tidak ada gambar yang bisa ditampilkan. ' + pesan
+        elif not url_unggah:
+            pesan += ' (ERP tidak mengirim izin unggah pratinjau)'
+        else:
+            try:
+                unggah_pratinjau(url_unggah, contoh)
+                param_baru = dict(param or {})
+                # URL unggah dibuang dari baris: ia izin MENULIS, dan tidak
+                # ada alasan menyimpannya sesudah dipakai.
+                param_baru.pop('pratinjau_unggah', None)
+                param_baru['pratinjau_nama'] = os.path.basename(contoh)
+                pesan = 'uji: {} siap dilihat. {}'.format(os.path.basename(contoh), pesan)
+            except Exception as e:  # noqa: BLE001
+                pesan += ' (pratinjau gagal diunggah: {})'.format(e)
+
     print('[corel] {} {}: {}'.format(tanda, status.upper(), pesan[:160]))
-    lapor(sambungan, baris['id'], status, pesan, jadi)
+    lapor(sambungan, baris['id'], status, pesan, jadi, parameter=param_baru)
 
 
 # Nama bahan dari ERP dipakai sebagai nama berkas: hanya nama polos, tanpa
@@ -903,10 +1001,22 @@ def sinkron_bahan_ai(sambungan, akar, demo=False):
     return ditulis
 
 
-def kerjakan_stiker(sambungan, pengaturan, baris, demo=False):
+def kerjakan_stiker(sambungan, cfg, pengaturan, baris, demo=False):
     """Pekerjaan outline stiker: gambar -> .cdr dengan garis potong."""
     tanda = '#{} {}'.format(baris['id'], baris['jenis'])
     berkas_hasil = siapkan_berkas_hasil('stiker-hasil.txt')
+
+    param = baris.get('parameter') or {}
+    if isinstance(param, str):
+        try:
+            param = json.loads(param)
+        except ValueError:
+            param = {}
+    folder_uji = None
+    if param.get('uji') and not demo:
+        folder_uji = siapkan_folder_uji()
+        param = dict(param, keluar=folder_uji)
+        baris = dict(baris, parameter=param)
 
     try:
         # Bahan dari Garapan diunduh dulu - susun_perintah_stiker menolak
@@ -940,7 +1050,8 @@ def kerjakan_stiker(sambungan, pengaturan, baris, demo=False):
         if total else None)
     lama = time.time() - mulai
     teks = baca_hasil(berkas_hasil) or str(nilai or '').strip()
-    laporkan_hasil(sambungan, baris, tanda, teks, galat, lama, 'berkas CDR')
+    laporkan_hasil(sambungan, baris, tanda, teks, galat, lama, 'berkas CDR',
+                   cfg=cfg, folder_uji=folder_uji, param=param)
 
 
 def cek_folder(folder, sku=None):
@@ -1003,7 +1114,7 @@ def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
     if baris.get('pekerjaan') == 'cek':
         return kerjakan_cek(sambungan, baris, demo=demo)
     if (baris.get('pekerjaan') or 'corel') == 'stiker':
-        return kerjakan_stiker(sambungan, pengaturan, baris, demo=demo)
+        return kerjakan_stiker(sambungan, cfg, pengaturan, baris, demo=demo)
 
     tanda = '#{} {} {}-{}'.format(baris['id'], baris['jenis'],
                                   baris['dari'], baris['sampai'])
@@ -1043,6 +1154,12 @@ def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
         if not demo:
             lapor(sambungan, baris['id'], 'gagal', pesan)
         return
+
+    folder_uji = None
+    if param.get('uji') and not demo:
+        folder_uji = siapkan_folder_uji()
+        param = dict(param, keluar=folder_uji)
+        baris = dict(baris, parameter=param)
 
     berkas_hasil = siapkan_berkas_hasil('corel-hasil.txt')
 
@@ -1105,7 +1222,15 @@ def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
     # PC host. Kembalian COM tetap dipakai kalau ada, untuk versi yang
     # kelakuannya berbeda.
     teks = baca_hasil(berkas_hasil) or str(nilai or '').strip()
-    laporkan_hasil(sambungan, baris, tanda, teks, galat, lama, 'foto')
+    laporkan_hasil(sambungan, baris, tanda, teks, galat, lama, 'foto',
+                   cfg=cfg, folder_uji=folder_uji, param=param)
+
+    # Foto yang jadi langsung diunggah ke R2 (Konsol membaca bucket itu, bukan Drive) -
+    # tools/foto_r2.py. Macro menulis ke <keluaran>\<nama folder desain>\tokoN\.
+    if not folder_uji and not galat and urai_hasil(teks).get('ok') == '1':
+        import foto_r2
+        foto_r2.setelah_foto(sambungan, inti, cfg, baris,
+                             os.path.join(keluaran, os.path.basename(os.path.normpath(folder))))
 
 
 def sekali_putaran(sambungan, cfg, pengaturan, batas=None, demo=False):
@@ -1117,6 +1242,14 @@ def sekali_putaran(sambungan, cfg, pengaturan, batas=None, demo=False):
         sinkron_bahan_ai(sambungan, akar, demo=demo)
     except Exception as e:  # noqa: BLE001 - jangan sampai menghentikan antrean Corel
         print('[bahan] sinkron gagal: {}'.format(e))
+    # Nomor folder produk tertinggi di Drive -> ERP (tiap 10 menit), supaya nomor produk baru
+    # di Garapan tidak menabrak produk yang sudah dikerjakan tapi belum masuk katalog.
+    if not demo:
+        try:
+            import nomor_drive
+            nomor_drive.lapor(sambungan, inti, cfg)
+        except Exception as e:  # noqa: BLE001
+            print('[nomor] gagal memindai Drive: {}'.format(e))
     dikerjakan = 0
     while batas is None or dikerjakan < batas:
         kode, data = erp.panggil(
