@@ -690,6 +690,8 @@ CATATAN_UNDUHAN = '_unduhan-ai.json'
 BERKAS_KURANG = 'KURANG.txt'
 EKSTENSI_GAMBAR = ('.png', '.jpg', '.jpeg')
 _peringatan_bahan = {'kolom': False, 'akar': False}
+# Folder yang gagal dibuat - dilaporkan sekali saja, bukan tiap 30 detik.
+folder_macet = set()
 
 
 def _sha_berkas(jalur):
@@ -850,7 +852,19 @@ def sinkron_bahan_ai(sambungan, akar, demo=False):
         if demo:
             print('[bahan]   UNDUH {} -> {}'.format(sku, jalur))
             continue
-        os.makedirs(folder, exist_ok=True)
+        # Satu folder bermasalah TIDAK boleh menghentikan unduhan produk lain. Contoh nyata
+        # 2026-10-11: folder dihapus operator → Google Drive desktop masih "memegang" namanya
+        # (WinError 183) sampai penghapusan selesai / dipulihkan dari Sampah.
+        try:
+            os.makedirs(folder, exist_ok=True)
+            folder_macet.discard(folder)
+        except OSError as e:
+            if folder not in folder_macet:
+                folder_macet.add(folder)
+                print('[bahan] folder {} tidak bisa dibuat ({}). Kalau baru dihapus, pulihkan dari '
+                      'Sampah Google Drive atau tunggu Drive selesai sinkron - dicoba lagi '
+                      'nanti.'.format(folder, e.strerror or e))
+            continue
         catatan = _baca_catatan(folder)
         if not keputusan_timpa(jalur, catatan.get(sku)):
             print('[bahan] {} dilewati: sudah diganti operator (tidak ditimpa)'.format(sku))
@@ -863,8 +877,11 @@ def sinkron_bahan_ai(sambungan, akar, demo=False):
             # 403 = link kedaluwarsa: biarkan, pekerja VPS memperbaruinya lalu dicoba lagi.
             print('[bahan] {} gagal: {}'.format(sku, e))
             continue
-        catatan[sku] = {'job': j['id'], 'sha': _sha_berkas(jalur), 'waktu': waktu_iso()}
-        _tulis_catatan(folder, catatan)
+        try:
+            catatan[sku] = {'job': j['id'], 'sha': _sha_berkas(jalur), 'waktu': waktu_iso()}
+            _tulis_catatan(folder, catatan)
+        except OSError as e:
+            print('[bahan] catatan unduhan {} gagal ditulis: {}'.format(folder, e))
         ditulis += 1
         selesai_ids.append(j['id'])
 
