@@ -859,6 +859,23 @@ def sekali_putaran(sambungan, cfg, pengaturan, batas=None, demo=False):
     return dikerjakan
 
 
+def jelaskan_galat(e, url):
+    """Pesan galat jaringan yang menyebut kemungkinan sebabnya.
+
+    "WinError 10061 target machine actively refused it" benar secara
+    teknis dan tidak berguna bagi operator yang baru menyalakan PC. Yang
+    sebenarnya terjadi hampir selalu satu hal: DB dev dicapai lewat
+    terowongan SSH, dan terowongan itu tidak ikut menyala saat login.
+    """
+    teks = str(e)
+    if '10061' in teks or 'refused' in teks.lower():
+        if '127.0.0.1' in url or 'localhost' in url:
+            return ('{} tidak menjawab. Terowongan SSH ke DB dev belum terbuka? '
+                    'Pengambil akan mencoba lagi sendiri begitu terbuka.'.format(url))
+        return '{} tidak menjawab. Jaringan atau server sedang tidak bisa dihubungi.'.format(url)
+    return teks
+
+
 def kunci_satu_pengambil():
     """Pegang kunci eksklusif, atau None kalau sudah ada yang memegangnya.
 
@@ -940,7 +957,7 @@ def main():
                 print('[corel] berhenti.')
                 return 0
             except Exception as e:  # noqa: BLE001
-                print('[corel] putaran gagal: {}'.format(e))
+                print('[corel] putaran gagal: {}'.format(jelaskan_galat(e, sambungan['url'])))
             time.sleep(a.jeda)
 
     n = sekali_putaran(sambungan, cfg, pengaturan,

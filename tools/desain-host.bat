@@ -1,5 +1,5 @@
 @echo off
-rem Versi  : 1.3   (2026-10-09 - tidak meninggalkan jendela menggantung)
+rem Versi  : 1.4   (2026-10-11 - membuka terowongan DB dev sendiri)
 rem ===================================================================
 rem  Desain Host - penghubung ERP <-> CorelDRAW di PC ini
 rem
@@ -66,6 +66,27 @@ rem  KOSONGKAN baris ini (jadi: set ERP_URL=) - alamat produksi sudah ada
 rem  di data/lokal.json dan dipakai otomatis.
 rem ------------------------------------------------------------------
 set ERP_URL=http://127.0.0.1:3102
+
+rem Nama host SSH (dari ~/.ssh/config) untuk membuka terowongan ke DB dev.
+rem Dikosongkan = tidak usah dibuka. Ikut dikosongkan saat naik produksi,
+rem karena di sana tidak ada terowongan sama sekali.
+set TEROWONGAN=heavyobjectgroup
+set PORT_DB=3102
+
+rem Desain Host menyala saat login; terowongan SSH tidak. Akibatnya tiap
+rem PC baru dinyalakan, log penuh "target machine actively refused it"
+rem sampai ada yang membukanya manual - pengambilnya memang pulih sendiri,
+rem tapi tidak ada yang tahu itu sambil membaca galat tiap 15 detik.
+if defined TEROWONGAN (
+	curl -s -o nul --max-time 3 http://127.0.0.1:%PORT_DB%/
+	if errorlevel 1 (
+		echo   Terowongan DB belum terbuka - membukanya...
+		rem BatchMode=yes: kalau kuncinya minta passphrase, GAGAL cepat dan
+		rem terbaca, bukan menggantung tanpa jendela untuk mengetiknya.
+		ssh -fN -o ExitOnForwardFailure=yes -o ServerAliveInterval=60 -o ConnectTimeout=15 -o BatchMode=yes -L 127.0.0.1:%PORT_DB%:127.0.0.1:%PORT_DB% %TEROWONGAN%
+		if errorlevel 1 echo   Terowongan gagal dibuka - pengambil tetap jalan dan mencoba lagi sendiri.
+	)
+)
 
 set ARG=--pantau --jeda 15
 if not "%ERP_URL%"=="" set ARG=%ARG% --url %ERP_URL%
