@@ -100,6 +100,13 @@ AWALAN_VERSI = {
 # akan menghentikan produksi tanpa perlu.
 MIN_VERSI_UJI = {'corel': (2, 2), 'stiker': (3, 2)}
 
+# Ukuran/jarak DESIMAL (mis. outline Shoe Charm 0.6 mm) butuh outline >= 3.3:
+# versi lama membaca "0.6" lewat CDbl setelah titik diganti koma, dan di Windows
+# en-US (PC host) hasilnya 6 mm - batch jalan "berhasil" dengan outline salah.
+# Angka bulat aman di semua versi, jadi hanya perintah berdesimal yang ditolak.
+MIN_VERSI_DESIMAL = {'stiker': (3, 3)}
+RX_DESIMAL = re.compile(r'(?:^|;)(?:ukuran|jarak)=\d+\.\d*[1-9]')
+
 # Kunci setelan yang boleh dioper ke macro. Yang tidak dikenal DIBUANG dan
 # dilaporkan, bukan diteruskan: nama kunci yang salah membuat macro memakai
 # bawaannya diam-diam, dan hasilnya baru ketahuan sesudah 150 berkas.
@@ -441,6 +448,18 @@ def jalankan_macro(perintah, batas_detik, progid='', pekerjaan='corel', pantau=N
                 keluhan = periksa_versi_uji(daftar_makro(app), pekerjaan)
                 if keluhan:
                     hasil['galat'] = keluhan
+                    return
+            butuh = MIN_VERSI_DESIMAL.get(pekerjaan)
+            if butuh and RX_DESIMAL.search(perintah or ''):
+                ada = versi_modul(daftar_makro(app), pekerjaan)
+                if ada is None or ada < butuh:
+                    hasil['galat'] = (
+                        'modul {} di CorelDRAW masih versi {} - ukuran/jarak desimal butuh {} '
+                        '(versi lama membaca 0.6 mm sebagai 6 mm). Impor ulang dari ERP: '
+                        'RnD -> Unduhan Alat.'.format(
+                            PENANDA_MACRO[pekerjaan].split('.')[0],
+                            '.'.join(str(x) for x in ada) if ada else 'lama',
+                            '.'.join(str(x) for x in butuh)))
                     return
             # Perintah dikirim sebagai argumen biasa, bukan tuple: RunMacro
             # meneruskan apa yang diberikan apa adanya, dan tuple sampai di
