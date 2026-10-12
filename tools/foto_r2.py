@@ -100,6 +100,13 @@ def setelah_foto(sambungan, inti, cfg, baris, folder_hasil):
             if id_baris:
                 _tambah_pesan(sambungan, id_baris, catatan)
             return catatan
+        # Jenis & slug lini baru (mis. CA-/SC-/MA-) hanya ada di Pengaturan Produk ERP —
+        # tanpa ini unggah.py tidak mengenali prefix-nya. Gagal baca = lanjut dengan cfg lokal.
+        try:
+            import pengaturan_erp
+            pengaturan_erp.gabung(sambungan, cfg)
+        except Exception as e:  # noqa: BLE001
+            print('[r2] pengaturan ERP tidak terbaca, memakai config lokal: {}'.format(e))
         ditambah = sinkron_sku(sambungan, inti, cfg, skus)
         if ditambah:
             print('[r2] {} SKU baru dari katalog ERP digabung ke data/sku.csv'.format(ditambah))

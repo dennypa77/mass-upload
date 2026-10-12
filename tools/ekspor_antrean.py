@@ -25,6 +25,7 @@ import tempfile
 
 import erp
 import foto_r2
+import pengaturan_erp
 import r2 as modul_r2
 
 TIPE_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -142,6 +143,13 @@ def kerjakan(sambungan, inti, cfg, baris, lapor, demo=False):
         if demo:
             print('[ekspor] {} (demo) {}'.format(tanda, folder))
             return
+        # Pengaturan ERP lebih dulu: template mana yang ditarik bergantung pada kategori
+        # yang dipilih di tab Pengaturan Produk.
+        pengaturan_erp.gabung(sambungan, cfg)
+        kurang = pengaturan_erp.kekurangan(cfg, [f['jenis'] for f in folder])
+        if kurang:
+            raise RuntimeError('Pengaturan Produk belum lengkap — isi di Konsol ERP lalu ekspor '
+                               'lagi. ' + ' | '.join(kurang))
         template_baru = tarik_template(sambungan, inti, cfg)
         if template_baru:
             print('[ekspor] template diperbarui dari ERP: {}'.format(', '.join(template_baru)))
