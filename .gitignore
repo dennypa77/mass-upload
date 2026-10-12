@@ -16,3 +16,6 @@ output/pilihan/
 data/lokal.json
 data/cadangan-*/
 data/sku.csv
+
+# cadangan berkas rahasia (berisi kunci R2 + JWT)
+data/lokal.json.bak*

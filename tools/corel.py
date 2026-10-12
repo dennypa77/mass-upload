@@ -1180,6 +1180,9 @@ def kerjakan_cek(sambungan, baris, demo=False):
 def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
     if baris.get('pekerjaan') == 'cek':
         return kerjakan_cek(sambungan, baris, demo=demo)
+    if baris.get('pekerjaan') == 'ekspor':
+        import ekspor_antrean
+        return ekspor_antrean.kerjakan(sambungan, inti, cfg, baris, lapor, demo=demo)
     if (baris.get('pekerjaan') or 'corel') == 'stiker':
         return kerjakan_stiker(sambungan, cfg, pengaturan, baris, demo=demo)
 
@@ -1324,7 +1327,7 @@ def sekali_putaran(sambungan, cfg, pengaturan, batas=None, demo=False):
             sambungan, 'GET',
             '{}?pekerjaan=in.({})&status=eq.menunggu&order=dibuat_at.asc'
             '&limit=5&select=id,pekerjaan,jenis,dari,sampai,folder_path,parameter'
-            .format(TABEL, ','.join(sorted(list(MACRO) + ['cek']))),
+            .format(TABEL, ','.join(sorted(list(MACRO) + ['cek', 'ekspor']))),
         )
         if kode >= 300:
             print('[corel] gagal membaca antrean: {} {}'.format(kode, data))
