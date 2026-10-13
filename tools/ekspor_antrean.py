@@ -18,10 +18,13 @@ import base64
 import contextlib
 import hashlib
 import io
+import json
 import os
 import secrets
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 
 import erp
 import foto_r2
@@ -132,11 +135,41 @@ def tarik_template(sambungan, inti, cfg):
     return diperbarui
 
 
+def ke_master(sambungan, inti, id_baris):
+    """Minta ERP memasukkan produk ekspor ini ke Master Desain (/api/rnd/ekspor-selesai).
+
+    Logika master tetap di ERP (eksporMaster.ts) — PC hanya memberi tahu "ekspor #id jadi".
+    Tidak pernah melempar galat: berkas Excel sudah jadi, jadi kegagalan di sini hanya
+    dicatat; operator bisa mengulang lewat tombol "Masukkan ke master" di Riwayat ekspor.
+    Butuh `erp.web` di data/lokal.json (alamat web ERP, mis. https://dev.erp-hog.com).
+    """
+    cadangan = ' — ulangi lewat tombol "Masukkan ke master" di Riwayat ekspor'
+    web = str(((inti.baca_lokal() or {}).get('erp') or {}).get('web') or '').rstrip('/')
+    if not web:
+        return 'Master Desain: erp.web di data/lokal.json belum diisi' + cadangan
+    minta = urllib.request.Request(web + '/api/rnd/ekspor-selesai',
+                                   data=json.dumps({'id': id_baris}).encode(), method='POST')
+    minta.add_header('Content-Type', 'application/json')
+    minta.add_header('X-Hog-Service', erp.mint_jwt(sambungan['rahasia'], 300))
+    minta.add_header('User-Agent', 'HOG-DesainHost/1.0')
+    try:
+        with urllib.request.urlopen(minta, timeout=180) as jawab:
+            data = json.loads(jawab.read().decode('utf-8') or '{}')
+        return 'Master Desain: ' + str(data.get('message') or 'selesai')
+    except urllib.error.HTTPError as e:
+        try:
+            pesan = json.loads(e.read().decode('utf-8') or '{}').get('message')
+        except ValueError:
+            pesan = None
+        return 'Master Desain GAGAL ({}): {}{}'.format(e.code, pesan or e.reason, cadangan)
+    except Exception as e:  # noqa: BLE001
+        return 'Master Desain GAGAL: {}{}'.format(e, cadangan)
+
+
 def kerjakan(sambungan, inti, cfg, baris, lapor, demo=False):
     tanda = '#{} ekspor'.format(baris['id'])
     param = baris.get('parameter') or {}
     if isinstance(param, str):
-        import json
         param = json.loads(param or '{}')
     try:
         folder = baca_folder(param)
@@ -187,6 +220,11 @@ def kerjakan(sambungan, inti, cfg, baris, lapor, demo=False):
             ringkas_log(tee.salinan.getvalue()))
         lapor(sambungan, baris['id'], 'berhasil', pesan, parameter=dict(param, hasil=hasil))
         print('[ekspor] {} selesai: {} berkas'.format(tanda, len(hasil)))
+        # Ekspor jadi = produknya masuk Master Desain (keputusan operator 2026-10-13).
+        # Sesudah 'berhasil' dilaporkan: ERP hanya mau mengisi master dari ekspor yang berhasil.
+        catatan = ke_master(sambungan, inti, baris['id'])
+        print('[ekspor] ' + catatan)
+        foto_r2._tambah_pesan(sambungan, baris['id'], catatan)
     except Exception as e:  # noqa: BLE001
         print('[ekspor] {} GAGAL: {}'.format(tanda, e))
         if not demo:
