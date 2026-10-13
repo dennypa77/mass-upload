@@ -803,6 +803,26 @@ def baca_manifest():
         return json.load(f)
 
 
+def toko_untuk_jenis(cfg, jenis):
+    """Folder toko yang menjual satu jenis produk.
+
+    Daftarnya datang dari ERP (tab Pengaturan Produk -> "Dijual di toko") dan
+    ikut masuk cfg lewat pengaturan_erp.gabung(). KOSONG atau tidak ada berarti
+    SEMUA toko -- itu perilaku sebelum fitur ini ada, jadi config.json lama tetap
+    bekerja apa adanya.
+
+    Nama toko yang disebut tapi tidak ada di cfg['toko'] diabaikan: daftar bisa
+    menyebut toko yang sudah dihapus, dan membuat lembar untuk toko hantu berarti
+    berkas ekspor berisi lembar tanpa tujuan.
+    """
+    semua = [t['folder_foto'] for t in cfg.get('toko') or []]
+    pilih = ((cfg.get('jenis') or {}).get(jenis) or {}).get('toko')
+    if not isinstance(pilih, list) or not pilih:
+        return semua
+    pilih = set(str(x) for x in pilih)
+    return [t for t in semua if t in pilih]
+
+
 def _nama_toko_dari(cfg, folder_toko):
     for t in cfg['toko']:
         if t['folder_foto'] == folder_toko:
@@ -1573,6 +1593,9 @@ def kumpulkan(cfg, data):
         for jenis in data:
             if jenis not in cfg['jenis']:
                 print('[info] jenis "{}" tidak ada di config.json, dilewati'.format(jenis))
+                continue
+            # Produk ini tidak dijual di toko ini -> tidak ada lembarnya.
+            if toko['folder_foto'] not in toko_untuk_jenis(cfg, jenis):
                 continue
             per_template.setdefault(cfg['jenis'][jenis]['template'], []).extend(
                 susun_listing(cfg, data, toko, jenis, manifest, dari_db))

@@ -11,6 +11,7 @@ ERP menang untuk nilai yang ADA di ERP; yang khusus PC (path_drive dari data/lok
 pola foto lama) tetap dari cfg. Hanya mengubah cfg di memori — config.json tidak ditulis.
 """
 import erp
+from erp import inti  # shopee_mass_upload; lewat erp supaya tidak ada impor melingkar
 
 WAJIB_JENIS = ('template', 'kategori', 'harga_paket', 'min_order', 'berat_gram', 'stok', 'spec')
 
@@ -18,10 +19,11 @@ WAJIB_JENIS = ('template', 'kategori', 'harga_paket', 'min_order', 'berat_gram',
 def gabung(sambungan, cfg):
     """Tarik bagian jenis & profil dari ERP ke cfg (di tempat). Kembalikan jenis yang baru."""
     kode, data = erp.panggil(sambungan, 'GET',
-                             'rnd_listing_pengaturan?bagian=in.(jenis,profil)&select=bagian,kunci,nilai')
+                             'rnd_listing_pengaturan?bagian=in.(jenis,profil,toko)&select=bagian,kunci,nilai')
     if kode >= 300 or not isinstance(data, list):
         raise RuntimeError('pengaturan ERP tidak terbaca ({})'.format(kode))
     baru = []
+    toko_erp = []
     for r in data:
         nilai = r.get('nilai') or {}
         if r['bagian'] == 'jenis':
@@ -31,11 +33,25 @@ def gabung(sambungan, cfg):
             lama = dict(semua.get(r['kunci']) or {})
             lama.update({k: v for k, v in nilai.items() if v is not None})
             semua[r['kunci']] = lama
+        elif r['bagian'] == 'toko':
+            # Daftar toko kini disunting di Konsol ERP, bukan config.json: sejak
+            # 2026-10-13 toko bisa ditambah dari web, dan PC yang masih memakai
+            # daftar lama akan membuat berkas untuk toko yang sudah tidak ada
+            # (atau melewatkan toko baru sama sekali).
+            toko_erp.append(dict(nilai, folder_foto=nilai.get('folder_foto') or r['kunci']))
         elif r['bagian'] == 'profil':
             p = cfg.setdefault('profil', {}).setdefault(r['kunci'], {})
             for sub in ('judul', 'deskripsi'):
                 if isinstance(nilai.get(sub), dict):
                     p.setdefault(sub, {}).update(nilai[sub])
+    # Urut menurut nomor folder supaya urutan berkas ekspor tidak berubah-ubah
+    # tiap kali PostgREST mengembalikan baris dengan urutan berbeda.
+    if toko_erp:
+        def _nomor(t):
+            sisa = ''.join(c for c in str(t.get('folder_foto') or '') if c.isdigit())
+            return int(sisa) if sisa else 0
+        cfg['toko'] = sorted(toko_erp, key=_nomor)
+
     # Template baru yang dipilih di ERP (mis. cabang kategori lain) belum punya path di
     # config.json — tetapkan path bawaan supaya tarik_template bisa memasangnya.
     tpl = cfg.setdefault('template', {})
@@ -55,7 +71,11 @@ def kekurangan(cfg, daftar_jenis):
             kurang.append('{}: jenis tidak dikenal'.format(jenis))
             continue
         hilang = [k for k in WAJIB_JENIS if j.get(k) in (None, '', 0)]
+        dijual = set(inti.toko_untuk_jenis(cfg, jenis))
         for toko in cfg.get('toko') or []:
+            # Toko yang tidak menjual produk ini tidak butuh judul/deskripsi untuknya.
+            if toko.get('folder_foto') not in dijual:
+                continue
             pr = (cfg.get('profil') or {}).get(toko.get('profil')) or {}
             if not ((pr.get('judul') or {}).get(jenis)):
                 hilang.append('judul {}'.format(toko.get('nama')))
