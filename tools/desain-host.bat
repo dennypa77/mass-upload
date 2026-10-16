@@ -1,5 +1,6 @@
 @echo off
-rem Versi  : 1.4   (2026-10-11 - membuka terowongan DB dev sendiri)
+rem Versi  : 1.6   (2026-10-15 - berhenti di PC yang ditandai bukan host;
+rem                  ssh -f tidak bekerja di OpenSSH bawaan Windows)
 rem ===================================================================
 rem  Desain Host - penghubung ERP <-> CorelDRAW di PC ini
 rem
@@ -77,16 +78,31 @@ rem Desain Host menyala saat login; terowongan SSH tidak. Akibatnya tiap
 rem PC baru dinyalakan, log penuh "target machine actively refused it"
 rem sampai ada yang membukanya manual - pengambilnya memang pulih sendiri,
 rem tapi tidak ada yang tahu itu sambil membaca galat tiap 15 detik.
-if defined TEROWONGAN (
-	curl -s -o nul --max-time 3 http://127.0.0.1:%PORT_DB%/
-	if errorlevel 1 (
-		echo   Terowongan DB belum terbuka - membukanya...
-		rem BatchMode=yes: kalau kuncinya minta passphrase, GAGAL cepat dan
-		rem terbaca, bukan menggantung tanpa jendela untuk mengetiknya.
-		ssh -fN -o ExitOnForwardFailure=yes -o ServerAliveInterval=60 -o ConnectTimeout=15 -o BatchMode=yes -L 127.0.0.1:%PORT_DB%:127.0.0.1:%PORT_DB% %TEROWONGAN%
-		if errorlevel 1 echo   Terowongan gagal dibuka - pengambil tetap jalan dan mencoba lagi sendiri.
-	)
-)
+if not defined TEROWONGAN goto lewati_terowongan
+curl -s -o nul --max-time 3 http://127.0.0.1:%PORT_DB%/
+if not errorlevel 1 goto lewati_terowongan
+echo   Terowongan DB belum terbuka - membukanya...
+rem `start`, BUKAN `ssh -f`: OpenSSH bawaan Windows 10 (9.5p1) tidak
+rem memindahkan dirinya ke belakang saat diberi -f, jadi baris ini menggantung
+rem selamanya dan pengambilnya tidak pernah jalan. Terlihat seperti sambungan
+rem lambat, padahal terowongannya sudah terbuka. OpenSSH 10.x tidak kena, jadi
+rem satu PC bisa jalan dan PC lain diam tanpa beda setelan apa pun.
+rem
+rem BatchMode=yes: kalau kuncinya minta passphrase, GAGAL cepat dan terbaca,
+rem bukan menggantung tanpa jendela untuk mengetiknya.
+start "terowongan-db" /min ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=60 -o ConnectTimeout=15 -o BatchMode=yes -L 127.0.0.1:%PORT_DB%:127.0.0.1:%PORT_DB% %TEROWONGAN%
+rem Tunggu sampai portnya benar-benar melayani - `start` kembali seketika,
+rem sementara sambungan SSH butuh satu-dua detik. Tanpa jeda ini pengambil
+rem menyala lebih dulu lalu mengeluh "connection refused" di putaran pertama.
+set TUNGGU=0
+:tunggu_terowongan
+%SystemRoot%\System32\timeout.exe /t 1 /nobreak >nul
+curl -s -o nul --max-time 2 http://127.0.0.1:%PORT_DB%/
+if not errorlevel 1 goto lewati_terowongan
+set /a TUNGGU+=1
+if %TUNGGU% lss 10 goto tunggu_terowongan
+echo   Terowongan gagal dibuka - pengambil tetap jalan dan mencoba lagi sendiri.
+:lewati_terowongan
 
 set ARG=--pantau --jeda 15
 if not "%ERP_URL%"=="" set ARG=%ARG% --url %ERP_URL%
@@ -104,6 +120,18 @@ rem Kode 3 = sudah ada pengambil lain di PC ini, mis. tugas Windows yang
 rem menyala sendiri. Berhenti, jangan ikut mengantre: satu PC punya satu
 rem CorelDRAW, dan dua pengambil bisa menjalankan dua macro sekaligus di
 rem dokumen yang sama.
+rem Kode 4 = PC ini ditandai bukan host di data\lokal.json. Berhenti
+rem tanpa mengulang: menunggu 15 detik lalu mencoba lagi hanya akan
+rem mengisi layar dengan pesan yang sama selamanya.
+if errorlevel 4 if not errorlevel 5 (
+	echo.
+	echo   PC ini ditandai BUKAN host (data\lokal.json -^> corel.bukan_host).
+	echo   Pekerjaan dibiarkan untuk PC host. Jendela ini akan tertutup.
+	echo.
+	%SystemRoot%\System32\timeout.exe /t 10 >nul
+	exit /b 0
+)
+
 if errorlevel 3 if not errorlevel 4 (
 	echo.
 	echo   Sudah ada Desain Host lain yang jalan di PC ini - jendela ini
