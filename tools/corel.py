@@ -107,12 +107,25 @@ MIN_VERSI_UJI = {'corel': (2, 2), 'stiker': (3, 2)}
 MIN_VERSI_DESIMAL = {'stiker': (3, 3)}
 RX_DESIMAL = re.compile(r'(?:^|;)(?:ukuran|jarak)=\d+\.\d*[1-9]')
 
+# Setelan yang butuh modul versi tertentu: (pola, versi minimum, nama fitur).
+# Modul lama TIDAK mengeluh soal setelan yang tidak dikenalnya - ia memakai
+# bawaannya dan mengerjakan hal lain, lalu melapor berhasil. `bundle` di modul
+# < 2.8 menghasilkan 9 foto foto1..foto9 berlatar -utama1.cdr yang menimpa
+# foto sampul produk, bukan 8 foto bundle.
+MIN_VERSI_SETELAN = {
+    'corel': (
+        (re.compile(r'(?:^|;)bundle=[1-9]'), (2, 8), 'setelan bundle'),
+        (re.compile(r'(?:^|;)sampulke=[1-9]'), (2, 6), 'setelan sampulke'),
+    ),
+}
+
 # Kunci setelan yang boleh dioper ke macro. Yang tidak dikenal DIBUANG dan
 # dilaporkan, bukan diteruskan: nama kunci yang salah membuat macro memakai
 # bawaannya diam-diam, dan hasilnya baru ketahuan sesudah 150 berkas.
 SETELAN_SAH = (
     'ukuran', 'geserx', 'gesery', 'teks', 'turun', 'jarakteks',
     'kolom', 'isi', 'jarakkolom', 'jarakbaris', 'geser', 'turunsampul',
+    'jumlah', 'pecah', 'sampulke', 'bundle',
 )
 
 BATAS_MENIT_BAWAAN = 20
@@ -134,6 +147,10 @@ def baca_corel():
         'progid': str(c.get('progid') or '').strip(),
         # Folder bahan AI bersama (Google Drive desktop). Kosongkan untuk mematikan unduhan.
         'bahan_ai': str(c.get('bahan_ai', BAHAN_AI_BAWAAN) or '').strip(),
+        # True di PC yang BUKAN host: ia berhenti sebelum mengambil
+        # apa pun dari antrean. Lihat catatan di README soal kenapa
+        # penandanya di sini dan bukan nama berkas.
+        'bukan_host': bool(c.get('bukan_host')),
     }
 
 
@@ -449,6 +466,22 @@ def jalankan_macro(perintah, batas_detik, progid='', pekerjaan='corel', pantau=N
                 if keluhan:
                     hasil['galat'] = keluhan
                     return
+            for pola, butuh_set, fitur in MIN_VERSI_SETELAN.get(pekerjaan, ()):
+                if not pola.search(perintah or ''):
+                    continue
+                ada = versi_modul(daftar_makro(app), pekerjaan)
+                if ada is None or ada < butuh_set:
+                    hasil['galat'] = (
+                        'modul {} di CorelDRAW masih versi {} - {} butuh {}. '
+                        'Modul lama tidak menolak setelan itu, ia mengabaikannya '
+                        'dan menulis foto yang salah. Impor ulang dari ERP: '
+                        'RnD -> Unduhan Alat.'.format(
+                            PENANDA_MACRO[pekerjaan].split('.')[0],
+                            '.'.join(str(x) for x in ada) if ada else 'lama',
+                            fitur,
+                            '.'.join(str(x) for x in butuh_set)))
+                    return
+
             butuh = MIN_VERSI_DESIMAL.get(pekerjaan)
             if butuh and RX_DESIMAL.search(perintah or ''):
                 ada = versi_modul(daftar_makro(app), pekerjaan)
@@ -768,8 +801,20 @@ def laporkan_hasil(sambungan, baris, tanda, teks, galat, lama, label,
         contoh = berkas_terbaru(folder_uji, ekstensi=('.png', '.jpg', '.jpeg'))
         url_unggah = (param or {}).get('pratinjau_unggah')
         if contoh is None:
-            status = 'gagal'
-            pesan = 'uji selesai tapi tidak ada gambar yang bisa ditampilkan. ' + pesan
+            # Tidak adanya gambar BUKAN kegagalan dengan sendirinya. Aturan ini
+            # lahir untuk foto produk, yang keluarannya memang PNG: nol gambar
+            # di sana berarti macro tidak mengerjakan apa pun sambil melapor
+            # berhasil (kejadian 2026-10-13). Outline menghasilkan .cdr, dan
+            # PNG pendamping hanya ada di sebagian jalur - menandainya gagal
+            # membuat pekerjaan yang jelas-jelas jadi terlihat merah di ERP.
+            #
+            # Yang menentukan sekarang jumlah berkas jadi, bukan ada-tidaknya
+            # pratinjau.
+            if jadi <= 0:
+                status = 'gagal'
+                pesan = 'uji selesai tapi tidak ada berkas yang jadi. ' + pesan
+            else:
+                pesan = 'uji selesai. Tidak ada pratinjau (hasilnya bukan gambar). ' + pesan
         elif not url_unggah:
             pesan += ' (ERP tidak mengirim izin unggah pratinjau)'
         else:
@@ -1193,12 +1238,64 @@ def kerjakan_cek(sambungan, baris, demo=False):
         return
     print('[corel] {} {}: {}'.format(tanda, folder, pesan))
     if not demo:
-        lapor(sambungan, baris['id'], 'berhasil', pesan, total)
+        # Daftar LENGKAP SKU yang kurang ikut dilaporkan (pesan hanya menyebut 30 pertama):
+        # Alur Otomatis ERP memakainya untuk membuat gambar AI hanya bagi SKU yang kurang.
+        kirim = None
+        if param.get('sku') and os.path.isdir(folder):
+            ada = {os.path.splitext(n)[0].upper() for n in os.listdir(folder)
+                   if n.lower().endswith(EKSTENSI_GAMBAR)}
+            kirim = dict(param, kurang=[str(x).strip() for x in param['sku']
+                                        if str(x).strip() and str(x).strip().upper() not in ada])
+        lapor(sambungan, baris['id'], 'berhasil', pesan, total, parameter=kirim)
+
+
+POLA_FOLDER_PC = re.compile(r'^([A-Za-z]:\\|\\\\[^\\]+\\)')
+
+
+def kerjakan_folder(sambungan, baris, demo=False):
+    """Pekerjaan 'folder': siapkan folder BAHAN AI satu produk Garapan (keputusan operator
+    2026-10-14). ERP mengantrekannya saat set dibuat, jadi folder kosong sudah ada sebelum
+    gambar AI jadi - tempat menaruh PNG manual / ekspor desain. Path disusun ERP
+    (folderProduk, Admin -> Folder Desain Host), sama dengan unduhan AI & Desain Host.
+    KURANG.txt berisi SKU yang belum punya gambar. Aman diulang; isi folder tidak disentuh."""
+    tanda = '#{} folder'.format(baris['id'])
+    param = baris.get('parameter') or {}
+    if isinstance(param, str):
+        try:
+            param = json.loads(param)
+        except ValueError:
+            param = {}
+    folder = str(baris.get('folder_path') or '').strip()
+    try:
+        if not POLA_FOLDER_PC.match(folder) or '..' in folder:
+            raise ValueError('path folder tidak sah: ' + folder[:120])
+        induk = os.path.dirname(os.path.dirname(folder.rstrip('\\/')))
+        if not os.path.isdir(induk):
+            raise ValueError('folder induk {} tidak ada (Google Drive desktop belum jalan?)'.format(induk))
+        if demo:
+            print('[corel] {} BUAT {}'.format(tanda, folder))
+            return
+        baru = not os.path.isdir(folder)
+        os.makedirs(folder, exist_ok=True)
+        if param.get('lini') and param.get('blok'):
+            tulis_kurang(sambungan, folder, param['lini'], param['blok'])
+        gambar = [n for n in os.listdir(folder) if n.lower().endswith(EKSTENSI_GAMBAR)]
+        pesan = '{} {} ({} gambar di dalamnya).'.format(
+            'Folder dibuat:' if baru else 'Folder sudah ada:', folder, len(gambar))
+    except (ValueError, OSError) as e:
+        print('[corel] {} GAGAL: {}'.format(tanda, e))
+        if not demo:
+            lapor(sambungan, baris['id'], 'gagal', str(e))
+        return
+    print('[corel] {} {}'.format(tanda, pesan))
+    lapor(sambungan, baris['id'], 'berhasil', pesan, len(gambar))
 
 
 def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
     if baris.get('pekerjaan') == 'cek':
         return kerjakan_cek(sambungan, baris, demo=demo)
+    if baris.get('pekerjaan') == 'folder':
+        return kerjakan_folder(sambungan, baris, demo=demo)
     if baris.get('pekerjaan') == 'ekspor':
         import ekspor_antrean
         return ekspor_antrean.kerjakan(sambungan, inti, cfg, baris, lapor, demo=demo)
@@ -1346,7 +1443,7 @@ def sekali_putaran(sambungan, cfg, pengaturan, batas=None, demo=False):
             sambungan, 'GET',
             '{}?pekerjaan=in.({})&status=eq.menunggu&order=dibuat_at.asc'
             '&limit=5&select=id,pekerjaan,jenis,dari,sampai,folder_path,parameter'
-            .format(TABEL, ','.join(sorted(list(MACRO) + ['cek', 'ekspor']))),
+            .format(TABEL, ','.join(sorted(list(MACRO) + ['cek', 'ekspor', 'folder']))),
         )
         if kode >= 300:
             print('[corel] gagal membaca antrean: {} {}'.format(kode, data))
@@ -1355,8 +1452,8 @@ def sekali_putaran(sambungan, cfg, pengaturan, batas=None, demo=False):
             return dikerjakan
 
         maju = False
-        # Cek gambar didahulukan: hitungan berkas cuma sedetik, operator menunggu jawabannya.
-        data = sorted(data, key=lambda b: 0 if b.get('pekerjaan') == 'cek' else 1)
+        # Cek gambar & buat folder didahulukan: cuma sedetik, operator menunggu jawabannya.
+        data = sorted(data, key=lambda b: 0 if b.get('pekerjaan') in ('cek', 'folder') else 1)
         for baris in data:
             if demo:
                 kerjakan(sambungan, cfg, pengaturan, baris, demo=True)
@@ -1432,6 +1529,48 @@ def kunci_satu_pengambil():
     return f
 
 
+def lapor_makro(progid=''):
+    """Cetak isi GlobalMacros + versi modul yang terbaca. 0 = ada isinya."""
+    try:
+        import win32com.client as win32com
+    except ImportError:
+        print('[makro] pywin32 belum terpasang di PC ini.')
+        return 2
+
+    kandidat = [progid] if progid else progid_terpasang() + [PROGID_UMUM]
+    print('[makro] progid yang dicoba: {}'.format(', '.join(kandidat)))
+    ketemu = False
+    for nama in kandidat:
+        try:
+            app = win32com.Dispatch(nama)
+        except Exception as e:  # noqa: BLE001
+            print('  {}: tidak bisa dijalankan ({})'.format(nama, e))
+            continue
+        makro = daftar_makro(app)
+        print('  {}: {} makro terdaftar di proyek {}'
+              .format(nama, len(makro), PROYEK_GMS))
+        if not makro:
+            print('    (kosong - GlobalMacros belum disimpan, modulnya masuk ke')
+            print('     proyek lain, atau ini instance CorelDRAW yang berbeda)')
+        for pekerjaan in sorted(PENANDA_MACRO):
+            penanda = PENANDA_MACRO[pekerjaan]
+            modul = penanda.split('.')[0]
+            punya = [m for m in makro if m.startswith(modul + '.')]
+            versi = versi_modul(makro, pekerjaan)
+            if penanda in makro:
+                print('    {:<20} SIAP  versi {}'
+                      .format(modul, '.'.join(str(x) for x in versi) if versi else 'lama'))
+                ketemu = True
+            elif punya:
+                print('    {:<20} ADA tapi tanpa {} - impor ulang .bas-nya'
+                      .format(modul, penanda.split('.')[-1]))
+            else:
+                print('    {:<20} TIDAK ADA di daftar'.format(modul))
+        for m in sorted(makro):
+            print('      - {}'.format(m))
+    return 0 if ketemu else 1
+
+
 def main():
     p = argparse.ArgumentParser(description='Pengerjaan antrean foto produk CorelDRAW')
     p.add_argument('--sekali', action='store_true', help='satu pekerjaan saja')
@@ -1439,10 +1578,16 @@ def main():
     p.add_argument('--jeda', type=int, default=30, help='jeda --pantau, detik')
     p.add_argument('--demo', action='store_true',
                    help='tampilkan perintahnya saja, jangan panggil CorelDRAW')
+    p.add_argument('--makro', action='store_true',
+                   help='sebut isi GlobalMacros di CorelDRAW, lalu berhenti '
+                        '(untuk memeriksa modul mana yang benar-benar dimuat)')
     p.add_argument('--url', default='',
                    help='alamat PostgREST lain, mis. http://127.0.0.1:3102 '
                         'untuk DB dev (rahasianya tetap dari lokal.json)')
     a = p.parse_args()
+
+    if a.makro:
+        return lapor_makro(baca_corel().get('progid'))
 
     sambungan = erp.baca_erp()
     if not sambungan:
@@ -1466,6 +1611,14 @@ def main():
 
     cfg = inti.baca_config()
     pengaturan = baca_corel()
+
+    if pengaturan.get('bukan_host'):
+        print('[corel] PC ini ditandai BUKAN host di data/lokal.json '
+              '(corel.bukan_host). Berhenti - pekerjaan dibiarkan untuk PC host.')
+        print('[corel] Kalau PC ini memang mau dipakai: hapus barisnya, '
+              'lalu jalankan lagi.')
+        return 4
+
     print('[corel] PC {} | keluaran {} | template {} | batas {:.0f} menit'.format(
         NAMA_PC, pengaturan['keluaran'] or '(belum diisi)',
         pengaturan['template'] or '(belum diisi)', pengaturan['batas_menit']))
