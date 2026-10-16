@@ -17,7 +17,12 @@ import re
 
 import erp
 
-POLA_SKU = re.compile(r'^([A-Z]{2}-\d{7})\.(png|jpe?g)$', re.I)
+# SKU bundle (CA-B-0000006) ikut: ia foto VARIAN untuk listing yang sama,
+# dan tanpa lolos di sini SKU-nya tidak pernah ditarik dari katalog ERP ke
+# data/sku.csv - unggah.py lalu menaruh fotonya di 'tak dikenal'. Folder yang
+# isinya HANYA foto bundle bahkan tidak terunggah sama sekali, karena daftar
+# SKU-nya kosong dan jalur unggah menyimpulkan 'ini folder sampul saja'.
+POLA_SKU = re.compile(r'^([A-Z]{2}-(?:B-)?\d{7})\.(png|jpe?g)$', re.I)
 
 
 def sku_di_folder(folder):
