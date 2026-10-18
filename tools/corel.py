@@ -625,13 +625,22 @@ def isi_folder(akar):
     return hasil
 
 
-def hitung_template(folder, sampul):
-    """Berapa template toko di folder itu: tokoN.cdr, atau tokoN-utamaM.cdr.
+def hitung_template(folder, jenis, nomor=0):
+    """Berapa template toko di folder itu untuk modul ini.
+
+        'varian' -> tokoN.cdr          (bukan -utama, bukan -bundle)
+        'sampul' -> tokoN-utamaM.cdr
+        'bundle' -> tokoN-bundle.cdr
 
     Dipakai sebagai pengali penyebut bar kemajuan. Foto varian menulis
     SATU berkas per desain PER TOKO - 50 desain dengan 3 template berarti
     150 berkas, bukan 50. Tanpa pengali ini barnya sampai "maju 99/50",
     angka yang membuat orang berhenti memercayainya.
+
+    Pembagian tiga ini HARUS sama dengan FpTemplate di modFotoProduk.bas.
+    Saat berkas -bundle.cdr muncul (2026-10-16) aturan lama "bukan -utama"
+    ikut menghitungnya sebagai template varian: tiga toko terbaca enam, dan
+    126 foto dilaporkan "maju 126/252" - mentok di separuh selamanya.
     """
     n = 0
     try:
@@ -639,11 +648,31 @@ def hitung_template(folder, sampul):
             nama = b.lower()
             if not nama.endswith('.cdr') or not nama.startswith('toko'):
                 continue
-            if ('-utama' in nama) == bool(sampul):
+            bundle = nama[:-4].endswith('-bundle')
+            utama = '-utama' in nama
+            # `nomor` = setelan SampulKe: modul Foto Utama 2 hanya memakai
+            # -utama2.cdr, jadi -utama1.cdr tidak boleh ikut jadi penyebut.
+            sesuai = utama and (not nomor or nama[:-4].endswith('-utama' + str(nomor)))
+            cocok = {'varian': not utama and not bundle,
+                     'sampul': sesuai,
+                     'bundle': bundle}.get(jenis, False)
+            if cocok:
                 n += 1
     except OSError:
         return 0
     return n
+
+
+def angka_setelan(perintah, kunci, bawaan=0):
+    """Nilai satu setelan di dalam perintah macro, mis. jumlah=5 -> 5."""
+    for bagian in (perintah or '').split(';'):
+        k, _, v = bagian.partition('=')
+        if k.strip().lower() == kunci:
+            try:
+                return float(str(v).strip().replace(',', '.'))
+            except ValueError:
+                return bawaan
+    return bawaan
 
 
 def hitung_bahan(folder, ekstensi, rekursif):
@@ -1387,12 +1416,24 @@ def kerjakan(sambungan, cfg, pengaturan, baris, demo=False):
 
     keluaran = perintah.split('keluaran=', 1)[1].split(';', 1)[0]
     folder_tpl = perintah.split('template=', 1)[1].split(';', 1)[0]
+    bahan = hitung_bahan(folder, ('.cdr', '.png'), False)
+    jumlah = int(angka_setelan(perintah, 'jumlah', 0))
     if mode == 'varian':
         # 1 desain x 1 template toko = 1 foto.
-        total = hitung_bahan(folder, ('.cdr', '.png'), False) * hitung_template(folder_tpl, False)
+        total = bahan * hitung_template(folder_tpl, 'varian')
+    elif angka_setelan(perintah, 'bundle', 0) >= 1:
+        # Bundle: satu foto per potongan penuh, per template -bundle. Potongan
+        # yang tidak penuh dibuang (42 desain + jumlah 5 = 8 foto, bukan 9).
+        total = hitung_template(folder_tpl, 'bundle') * (bahan // jumlah if jumlah else 1)
+    elif angka_setelan(perintah, 'pecah', 0) >= 1 and jumlah:
+        # Memecah: satu template menghasilkan beberapa foto, dibulatkan ke atas
+        # (42 desain + jumlah 21 = 2 foto).
+        total = (hitung_template(folder_tpl, 'sampul',
+                                 int(angka_setelan(perintah, 'sampulke', 0)))
+                 * -(-bahan // jumlah))
     else:
-        # Foto sampul: satu berkas per template -utama.
-        total = hitung_template(folder_tpl, True)
+        # Foto sampul biasa: satu berkas per template -utama.
+        total = hitung_template(folder_tpl, 'sampul')
     sebelum = isi_folder(keluaran)
 
     mulai = time.time()
