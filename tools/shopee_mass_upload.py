@@ -458,6 +458,12 @@ def kode_seri(nama_seri):
     return re.sub(r'[<>:"/\\|?*]+', '-', kode).strip('-')
 
 
+# SKU bundle: CA-B-0000006 = bundle berisi 5 desain mulai CA-0000006. Ia varian
+# biasa di listing yang sama (42 tunggal + 8 bundle = 50, batas varian Shopee),
+# tapi harga dan beratnya berbeda.
+POLA_SKU_BUNDLE = re.compile(r'^[A-Z]{2}-B-\d{7}$', re.I)
+
+
 def nomor_sku(sku):
     """'JB-0000051' -> 51 ; 'JB-CUSTOM-01' -> None"""
     m = re.match(r'^[A-Z]+-(\d+)$', sku.upper())
@@ -1093,7 +1099,21 @@ def tulis_excel(cfg, path_template, path_out, listings):
     for L in listings:
         j = cfg['jenis'][L['jenis']]
         harga = round(j['harga_paket'] / j['min_order'])
+        harga_bundle = j.get('harga_bundle') or 0
+        berat_bundle = j.get('berat_bundle') or 0
+        # Harga bundle TIDAK boleh jatuh ke harga satuan diam-diam: satu varian
+        # bundle berisi lima keping, jadi kelalaian itu menjual lima seharga satu
+        # dan baru ketahuan sesudah pesanan masuk. Dihentikan di sini, dengan
+        # menyebut jenis dan contoh SKU-nya.
+        if not harga_bundle:
+            bundel = [d['sku'] for d in L['desain'] if POLA_SKU_BUNDLE.match(d['sku'])]
+            if bundel:
+                raise ValueError(
+                    'Harga bundle {} belum diisi, padahal listing ini memuat {} varian '
+                    'bundle (mis. {}). Isi di Konsol ERP -> Pengaturan Produk -> {}.'
+                    .format(L['jenis'], len(bundel), bundel[0], L['jenis']))
         for n, d in enumerate(L['desain']):
+            bundle = bool(POLA_SKU_BUNDLE.match(d['sku']))
             if n == 0:
                 isi(r, 'ps_product_name', L['judul'])
                 isi(r, 'ps_product_description', L['deskripsi'])
@@ -1114,10 +1134,14 @@ def tulis_excel(cfg, path_template, path_out, listings):
             # nama varian memakai kode SKU-nya langsung, bukan "Desain 01"
             isi(r, 'et_title_option_for_variation_1', d['sku'])
             isi(r, 'et_title_image_per_variation', L['per_varian'][n])
-            isi(r, 'ps_price', harga)
+            isi(r, 'ps_price', harga_bundle if bundle else harga)
             isi(r, 'ps_stock', j['stok'])
             isi(r, 'ps_sku_short', d['sku'])
-            isi(r, 'ps_weight', j['berat_gram'])
+            # Berat juga per baris varian. Bundle isi 5 memakai beratnya sendiri;
+            # kalau belum diisi, berat satuan x 5 - ongkos kirim yang salah di
+            # setiap transaksi bundle ditanggung toko, bukan pembeli.
+            isi(r, 'ps_weight',
+                (berat_bundle or j['berat_gram'] * 5) if bundle else j['berat_gram'])
             for k in kanal:
                 isi(r, k, 'Aktif')
             # `atribut` boleh tidak ada: jenis yang dibuat lewat Pengaturan Produk
