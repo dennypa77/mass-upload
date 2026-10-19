@@ -1120,7 +1120,12 @@ def tulis_excel(cfg, path_template, path_out, listings):
             isi(r, 'ps_weight', j['berat_gram'])
             for k in kanal:
                 isi(r, k, 'Aktif')
-            for id_attr, nilai in j['atribut'].items():
+            # `atribut` boleh tidak ada: jenis yang dibuat lewat Pengaturan Produk
+            # ERP tidak pernah menuliskan kuncinya, dan kategori Shopee yang tidak
+            # punya atribut wajib memang tidak membutuhkannya. Dulu ini berhenti
+            # dengan KeyError bernama 'atribut' - pesan yang tidak menyebut jenis,
+            # kategori, maupun apa yang harus diisi.
+            for id_attr, nilai in (j.get('atribut') or {}).items():
                 isi(r, 'ps_product_global_attribute.' + id_attr, nilai)
             r += 1
 
@@ -1148,7 +1153,7 @@ def periksa(cfg, listings, wajib):
         if not L['utama'][0]:
             pesan.append('BELUM ADA FOTO: {}'.format(L['judul'][:70]))
         for id_attr, label in wajib.get(L['jenis'], {}).items():
-            if id_attr not in cfg['jenis'][L['jenis']]['atribut']:
+            if id_attr not in (cfg['jenis'][L['jenis']].get('atribut') or {}):
                 pesan.append('atribut wajib belum diisi ({}): {}'.format(label, L['jenis']))
     return pesan
 
