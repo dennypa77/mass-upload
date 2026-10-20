@@ -126,7 +126,10 @@ def tarik_template(sambungan, inti, cfg):
         with open(sementara, 'wb') as f:
             f.write(isi)
         try:
-            hasil = inti.pasang_template(cfg, sementara)
+            # Kunci dari ERP ikut disebut: template DASAR Shopee tidak memuat daftar
+            # kategori, jadi tidak ada apa pun di dalam berkasnya yang bisa menunjuk
+            # tujuannya sendiri.
+            hasil = inti.pasang_template(cfg, sementara, kunci_paksa=t['kunci'])
         except SystemExit as e:  # pasang_template memakai sys.exit untuk galat
             raise RuntimeError('gagal memasang template {} dari ERP: {}'.format(t['kunci'], e))
         if hasil.get('kunci') != t['kunci']:

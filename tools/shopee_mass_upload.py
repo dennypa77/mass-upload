@@ -268,35 +268,47 @@ def info_template(cfg):
     return hasil
 
 
-def pasang_template(cfg, berkas):
+def pasang_template(cfg, berkas, kunci_paksa=None):
     """Pasang berkas template Shopee yang baru diunduh.
 
     Tujuannya ditentukan dari isi berkas itu sendiri: kategori mana yang
     didukungnya dicocokkan dengan kategori yang dipakai di config, jadi tidak
     perlu memilih-milih secara manual.
+
+    `kunci_paksa` untuk TEMPLATE DASAR Shopee: satu berkas untuk semua kategori,
+    tanpa lembar HiddenCatProps, kodenya diketik sendiri di kolom ps_category
+    (Magnet Akrilik memakai ini - kode 101398). Berkas seperti itu tidak memuat
+    apa pun yang bisa menunjuk tujuannya, jadi tujuannya harus disebutkan -
+    yang menyebut adalah ERP, yang memang menyimpannya per kunci.
     """
     if not os.path.exists(berkas):
         sys.exit('Berkas tidak ditemukan: {}'.format(berkas))
     daftar = kategori_template(berkas)
-    if not daftar:
+    if not daftar and not kunci_paksa:
         sys.exit('Berkas itu tidak terlihat seperti template mass upload Shopee '
-                 '(sheet HiddenCatProps tidak ada).')
+                 '(sheet HiddenCatProps tidak ada). Kalau ini template DASAR, '
+                 'sebutkan tujuannya - dari ERP tujuannya ikut terkirim.')
 
-    cocok = set()
-    for jenis, j in cfg['jenis'].items():
-        if j['kategori'] in daftar:
-            cocok.add(j['template'])
-    if not cocok:
-        print('[template] {} kategori terbaca, tapi tidak satu pun cocok dengan '
-              'kategori di config.json:'.format(len(daftar)))
+    if kunci_paksa:
+        if kunci_paksa not in (cfg.get('template') or {}):
+            sys.exit('Template "{}" tidak dikenal di config.json.'.format(kunci_paksa))
+        cocok = {kunci_paksa}
+    else:
+        cocok = set()
         for jenis, j in cfg['jenis'].items():
-            print('   {:<12} butuh: {}'.format(jenis, j['kategori']))
-        print('   Contoh kategori di berkas itu:')
-        for k in daftar[:5]:
-            print('     - {}'.format(k))
-        sys.exit('Unduh template untuk cabang kategori yang sesuai.')
-    if len(cocok) > 1:
-        sys.exit('Berkas itu cocok untuk lebih dari satu template: {}'.format(sorted(cocok)))
+            if j['kategori'] in daftar:
+                cocok.add(j['template'])
+        if not cocok:
+            print('[template] {} kategori terbaca, tapi tidak satu pun cocok dengan '
+                  'kategori di config.json:'.format(len(daftar)))
+            for jenis, j in cfg['jenis'].items():
+                print('   {:<12} butuh: {}'.format(jenis, j['kategori']))
+            print('   Contoh kategori di berkas itu:')
+            for k in daftar[:5]:
+                print('     - {}'.format(k))
+            sys.exit('Unduh template untuk cabang kategori yang sesuai.')
+        if len(cocok) > 1:
+            sys.exit('Berkas itu cocok untuk lebih dari satu template: {}'.format(sorted(cocok)))
 
     kunci = cocok.pop()
     tujuan = os.path.join(AKAR, cfg['template'][kunci])
