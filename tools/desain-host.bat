@@ -66,12 +66,13 @@ rem  lewat terowongan SSH di 127.0.0.1:3102. Begitu naik ke produksi,
 rem  KOSONGKAN baris ini (jadi: set ERP_URL=) - alamat produksi sudah ada
 rem  di data/lokal.json dan dipakai otomatis.
 rem ------------------------------------------------------------------
-set ERP_URL=http://127.0.0.1:3102
+rem PRODUKSI sejak 2026-10-21: kosong = alamat dari data/lokal.json (db.erp-hog.com).
+set ERP_URL=
 
 rem Nama host SSH (dari ~/.ssh/config) untuk membuka terowongan ke DB dev.
 rem Dikosongkan = tidak usah dibuka. Ikut dikosongkan saat naik produksi,
 rem karena di sana tidak ada terowongan sama sekali.
-set TEROWONGAN=heavyobjectgroup
+set TEROWONGAN=
 set PORT_DB=3102
 
 rem Desain Host menyala saat login; terowongan SSH tidak. Akibatnya tiap
