@@ -107,12 +107,27 @@ def setelah_foto(sambungan, inti, cfg, baris, folder_hasil):
             return catatan
         # Jenis & slug lini baru (mis. CA-/SC-/MA-) hanya ada di Pengaturan Produk ERP —
         # tanpa ini unggah.py tidak mengenali prefix-nya. Gagal baca = lanjut dengan cfg lokal.
+        galat_pengaturan = None
         try:
             import pengaturan_erp
             pengaturan_erp.gabung(sambungan, cfg)
         except Exception as e:  # noqa: BLE001
+            galat_pengaturan = str(e)
             print('[r2] pengaturan ERP tidak terbaca, memakai config lokal: {}'.format(e))
-        ditambah = sinkron_sku(sambungan, inti, cfg, skus)
+        try:
+            ditambah = sinkron_sku(sambungan, inti, cfg, skus)
+        except RuntimeError as e:
+            # Sebab sebenarnya ikut ke pesan antrean (terbaca di log ERP), bukan cuma di jendela
+            # PC: Coaster 2026-10-16 berhenti di "Tidak ada SKU yang bisa dibaca" padahal
+            # pengaturannya sudah tersimpan di ERP — yang tidak terlihat: PC host tidak mengenal
+            # awalan CA, dan apakah pengaturan ERP gagal dibaca.
+            dikenal = sorted({str(j.get('prefix_sku') or '').upper()
+                              for j in (cfg.get('jenis') or {}).values()} - {''})
+            awalan = sorted({x.split('-')[0].upper() for x in skus})
+            raise RuntimeError('{} Awalan SKU di folder: {}; yang dikenal PC ini: {}{}'.format(
+                e, ', '.join(awalan), ', '.join(dikenal) or '-',
+                '. Pengaturan ERP gagal dibaca: ' + galat_pengaturan if galat_pengaturan
+                else '. Pengaturan ERP terbaca - periksa Pengaturan Produk lini ini.'))
         if ditambah:
             print('[r2] {} SKU baru dari katalog ERP digabung ke data/sku.csv'.format(ditambah))
         import unggah
