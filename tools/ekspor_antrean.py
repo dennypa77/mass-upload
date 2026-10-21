@@ -82,6 +82,36 @@ def sku_katalog(sambungan, folder):
     return sorted(set(skus))
 
 
+def sinkron_tambahan(sambungan, inti):
+    """Samakan foto TAMBAHAN- (Utama 3-5 PNG) di data/foto_r2.csv dengan ERP.
+
+    Utama 3-5 diunggah dari Konsol ERP -> Sumber Data: berkasnya langsung ke bucket
+    dan barisnya ke rnd_listing_foto, TANPA lewat komputer ini. Build membaca URL dari
+    foto_r2.csv, jadi tanpa langkah ini foto yang baru diunggah tidak ikut terekspor,
+    dan foto yang sudah dihapus di Konsol tetap terekspor (tautan mati).
+
+    ERP yang menentukan: yang ada di rnd_listing_foto masuk, baris TAMBAHAN- yang
+    tidak ada di sana dibuang. Hasilnya ekspor = yang terlihat di tab Pratinjau.
+    Kembalikan (jumlah masuk, jumlah dibuang).
+    """
+    kode, data = erp.panggil(
+        sambungan, 'GET',
+        'rnd_listing_foto?tipe=eq.tambahan&aktif=is.true&select=path,url,ukuran&limit=5000')
+    if kode >= 300 or not isinstance(data, list):
+        raise RuntimeError('daftar foto tambahan ERP tidak terbaca ({})'.format(kode))
+    aktif = {r['path']: (r['url'], r.get('ukuran')) for r in data if r.get('path') and r.get('url')}
+    lama = set()
+    if os.path.exists(inti.MANIFEST_R2):
+        import csv
+        with open(inti.MANIFEST_R2, encoding='utf-8-sig', newline='') as f:
+            for r in csv.DictReader(f):
+                p = r.get('path') or ''
+                if os.path.basename(p).upper().startswith('TAMBAHAN') and p not in aktif:
+                    lama.add(p)
+    inti.perbarui_manifest_r2(aktif, hapus=lama)
+    return len(aktif), len(lama)
+
+
 def erp_kutip(teks):
     from urllib.parse import quote
     return quote('"{}"'.format(teks), safe='')
@@ -192,6 +222,9 @@ def kerjakan(sambungan, inti, cfg, baris, lapor, demo=False):
         ditambah = foto_r2.sinkron_sku(sambungan, inti, cfg, sku_katalog(sambungan, folder))
         if ditambah:
             print('[ekspor] {} SKU baru dari katalog ERP digabung ke data/sku.csv'.format(ditambah))
+        masuk, buang = sinkron_tambahan(sambungan, inti)
+        print('[ekspor] foto Utama 3-5 dari ERP: {} tercatat{}'.format(
+            masuk, ', {} yang sudah dihapus dibuang'.format(buang) if buang else ''))
         data = inti.saring_lingkup(inti.baca_sku(), folder)
         if not data:
             raise RuntimeError('tidak ada SKU pada folder yang dipilih')

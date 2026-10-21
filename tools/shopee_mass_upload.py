@@ -1131,13 +1131,13 @@ def tulis_excel(cfg, path_template, path_out, listings):
                 isi(r, 'ps_product_description', L['deskripsi'])
                 isi(r, 'ps_sku_parent_short', L['sku_induk'])
                 isi(r, 'ps_item_cover_image', L['utama'][0])
-                isi(r, 'ps_item_image_1', L['utama'][1])
-                isi(r, 'ps_item_image_2', L['utama'][2])
-                # foto tambahan mengisi Foto Produk 3 dan seterusnya
+                # Foto Produk 1..8 diisi RAPAT: Utama 2, Utama 3 buatan makro (kalau
+                # ada), lalu foto tambahan (Utama 3-5 PNG dari Konsol). Dulu slot 2
+                # selalu disediakan untuk -utama3 makro; sejak makro tidak membuatnya
+                # lagi (2026-10-15) slot itu kosong dan Utama 3 PNG jatuh ke foto ke-4.
                 # (pakai nama sendiri; "n" dipakai loop varian di luar)
-                for slot, tautan in enumerate(L['tambahan'], start=3):
-                    if slot > 8:
-                        break
+                foto_lain = [t for t in [L['utama'][1], L['utama'][2]] + L['tambahan'] if t]
+                for slot, tautan in enumerate(foto_lain[:8], start=1):
                     isi(r, 'ps_item_image_{}'.format(slot), tautan)
             isi(r, 'ps_category', j['kategori'])
             isi(r, 'ps_minimum_purchase_quantity', j['min_order'])
@@ -1483,7 +1483,7 @@ def ukuran_manifest_r2(_ingatan={}):
     return hasil
 
 
-def perbarui_manifest_r2(tambahan):
+def perbarui_manifest_r2(tambahan, hapus=()):
     """Masukkan objek yang barusan diunggah ke daftar bersama, tanpa membaca bucket.
 
     tambahan = {path: (url, ukuran)}. Membaca ulang seluruh isi bucket sesudah
@@ -1495,7 +1495,7 @@ def perbarui_manifest_r2(tambahan):
     Ditulis ke berkas sementara lalu ditukar, supaya scan status yang sedang
     membaca tidak pernah melihat berkas yang setengah jadi.
     """
-    if not tambahan:
+    if not tambahan and not hapus:
         return 0
     baris = {}
     if os.path.exists(MANIFEST_R2):
@@ -1503,6 +1503,8 @@ def perbarui_manifest_r2(tambahan):
             for r in csv.DictReader(f):
                 if r.get('path'):
                     baris[r['path']] = (r.get('url') or '', r.get('ukuran') or '')
+    for jalur in hapus:
+        baris.pop(jalur, None)
     for jalur, (tautan, ukuran) in tambahan.items():
         baris[jalur] = (tautan, '' if ukuran is None else ukuran)
     os.makedirs(os.path.dirname(MANIFEST_R2), exist_ok=True)
