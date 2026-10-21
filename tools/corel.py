@@ -945,6 +945,7 @@ def unduh_bahan(baris, demo=False):
 BAHAN_AI_BAWAAN = r'G:\My Drive\BAHAN AI'
 CATATAN_UNDUHAN = '_unduhan-ai.json'
 BERKAS_KURANG = 'KURANG.txt'
+BERKAS_REVISI = 'REVISI.txt'
 EKSTENSI_GAMBAR = ('.png', '.jpg', '.jpeg')
 _peringatan_bahan = {'kolom': False, 'akar': False}
 # Folder yang gagal dibuat - dilaporkan sekali saja, bukan tiap 30 detik.
@@ -1281,6 +1282,42 @@ def kerjakan_cek(sambungan, baris, demo=False):
 POLA_FOLDER_PC = re.compile(r'^([A-Za-z]:\\|\\\\[^\\]+\\)')
 
 
+def tulis_revisi(folder, revisi):
+    """Tambah baris ke REVISI.txt: satu baris per SKU yang QC-nya diubah jadi Revisi di ERP
+    (operator 2026-10-21). Berkas yang sama untuk semua revisi produk ini - hanya DITAMBAH,
+    tidak pernah ditimpa, supaya riwayatnya utuh. Kembalikan jumlah baris yang ditulis."""
+    baris = []
+    for r in revisi or []:
+        if not isinstance(r, dict):
+            continue
+        sku = str(r.get('sku') or '').strip()
+        if not sku:
+            continue
+        waktu = str(r.get('waktu') or '')
+        try:
+            from datetime import datetime
+            waktu = (datetime.fromisoformat(waktu.replace('Z', '+00:00')).astimezone()
+                     .strftime('%Y-%m-%d %H:%M'))
+        except (ValueError, TypeError):
+            waktu = waktu[:16]
+        bagian = [waktu, sku, 'Revisi']
+        if r.get('oleh'):
+            bagian.append('oleh ' + str(r['oleh']).strip())
+        if r.get('catatan'):
+            bagian.append('catatan: ' + ' '.join(str(r['catatan']).split()))
+        baris.append(' | '.join(bagian))
+    if not baris:
+        return 0
+    jalur = os.path.join(folder, BERKAS_REVISI)
+    baru = not os.path.exists(jalur)
+    with open(jalur, 'a', encoding='utf-8') as f:
+        if baru:
+            f.write('Riwayat revisi QC produk ini (dari ERP). Satu baris per SKU yang perlu '
+                    'dikerjakan ulang.\n\n')
+        f.write('\n'.join(baris) + '\n')
+    return len(baris)
+
+
 def kerjakan_folder(sambungan, baris, demo=False):
     """Pekerjaan 'folder': siapkan folder BAHAN AI satu produk Garapan (keputusan operator
     2026-10-14). ERP mengantrekannya saat set dibuat, jadi folder kosong sudah ada sebelum
@@ -1308,9 +1345,12 @@ def kerjakan_folder(sambungan, baris, demo=False):
         os.makedirs(folder, exist_ok=True)
         if param.get('lini') and param.get('blok'):
             tulis_kurang(sambungan, folder, param['lini'], param['blok'])
+        revisi = tulis_revisi(folder, param.get('revisi'))
         gambar = [n for n in os.listdir(folder) if n.lower().endswith(EKSTENSI_GAMBAR)]
         pesan = '{} {} ({} gambar di dalamnya).'.format(
             'Folder dibuat:' if baru else 'Folder sudah ada:', folder, len(gambar))
+        if revisi:
+            pesan += ' {} revisi dicatat di {}.'.format(revisi, BERKAS_REVISI)
     except (ValueError, OSError) as e:
         print('[corel] {} GAGAL: {}'.format(tanda, e))
         if not demo:
